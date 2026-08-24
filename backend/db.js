@@ -34,6 +34,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(token_hash, revoked_at, expires_at);
+  CREATE TABLE IF NOT EXISTS password_reset_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL COLLATE NOCASE,
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_password_reset_email ON password_reset_codes(email, used_at, expires_at);
   CREATE TABLE IF NOT EXISTS plans (
     id INTEGER PRIMARY KEY,
     slug TEXT NOT NULL UNIQUE,
@@ -266,9 +276,32 @@ function revokeOtherSessions(userId, currentSessionId) {
   db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND id != ? AND revoked_at IS NULL").run(userId, currentSessionId);
 }
 
+function revokeAllSessions(userId) {
+  db.prepare("UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL").run(userId);
+}
+
+function createPasswordResetCode(email, codeHash, expiresAt) {
+  db.prepare("DELETE FROM password_reset_codes WHERE email = ? OR datetime(expires_at) <= datetime('now')").run(email);
+  const result = db.prepare('INSERT INTO password_reset_codes (email, code_hash, expires_at) VALUES (?, ?, ?)').run(email, codeHash, expiresAt);
+  return result.lastInsertRowid;
+}
+
+function getPasswordResetCode(email) {
+  return db.prepare("SELECT * FROM password_reset_codes WHERE email = ? AND used_at IS NULL ORDER BY id DESC LIMIT 1").get(email);
+}
+
+function incrementPasswordResetAttempts(id) {
+  db.prepare('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE id = ?').run(id);
+}
+
+function consumePasswordResetCode(id) {
+  db.prepare("UPDATE password_reset_codes SET used_at = datetime('now') WHERE id = ? AND used_at IS NULL").run(id);
+}
+
 module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, listPlans, createOrder, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription, createSession,
-  getSessionByToken, revokeSession, revokeOtherSessions, hashToken,
+  getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
+  createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 };

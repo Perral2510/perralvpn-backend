@@ -3,8 +3,10 @@ const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById,
   createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
-  createSession, getSessionByToken, revokeSession, revokeOtherSessions,
+  createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
+  createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
+const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -89,6 +91,15 @@ function requireAuth(req, res, next) {
   req.session = session; req.user = getUserById(session.user_id); next();
 }
 function safeText(value, max = 120) { return String(value || '').trim().slice(0, max); }
+function resetCodeHash(code) { return hashToken(String(code || '').trim()); }
+function safeCompare(left, right) {
+  const a = Buffer.from(String(left || ''));
+  const b = Buffer.from(String(right || ''));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function genericResetResponse(res) {
+  return res.json({ ok: true, message: 'Nếu email tồn tại, mã đặt lại mật khẩu đã được gửi.' });
+}
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'perral-api', time: new Date().toISOString() }));
 
@@ -172,6 +183,55 @@ app.post('/api/auth/register', rateLimit, (req, res) => {
     .run(makeUserCode(), email, hashPassword(password), name, 0);
   const user = getUserById(result.lastInsertRowid);
   return res.status(201).json({ ok: true, message: 'Đăng ký thành công.', data: publicUser(user) });
+});
+
+app.post('/api/auth/request-password-reset', rateLimit, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  if (!validEmail(email)) return res.status(400).json({ ok: false, message: 'Email không hợp lệ.' });
+  if (!isMailerConfigured()) return res.status(503).json({ ok: false, message: 'Chức năng email chưa được cấu hình trên máy chủ.' });
+
+  const user = getUserByEmail(email);
+  // Keep the same response for unknown emails to prevent account enumeration.
+  if (!user) return genericResetResponse(res);
+
+  const code = String(crypto.randomInt(100000, 1000000));
+  const expiresMinutes = Number(process.env.RESET_CODE_EXPIRES_MINUTES || 10);
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+  createPasswordResetCode(email, resetCodeHash(code), expiresAt);
+
+  try {
+    await sendPasswordResetCode({ to: email, code, expiresMinutes });
+  } catch (error) {
+    console.error('Password reset email failed:', error.message);
+    return res.status(502).json({ ok: false, message: 'Không thể gửi email lúc này. Vui lòng thử lại sau.' });
+  }
+  return genericResetResponse(res);
+});
+
+app.post('/api/auth/reset-password', rateLimit, (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const code = safeText(req.body.code, 12);
+  const newPassword = String(req.body.newPassword || '');
+  if (!validEmail(email) || !/^\d{6}$/.test(code)) return res.status(400).json({ ok: false, message: 'Email hoặc mã xác nhận không hợp lệ.' });
+  if (newPassword.length < 8) return res.status(400).json({ ok: false, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' });
+
+  const reset = getPasswordResetCode(email);
+  if (!reset || reset.attempts >= 5 || new Date(reset.expires_at).getTime() <= Date.now()) {
+    return res.status(400).json({ ok: false, message: 'Mã không hợp lệ hoặc đã hết hạn.' });
+  }
+  if (!safeCompare(reset.code_hash, resetCodeHash(code))) {
+    incrementPasswordResetAttempts(reset.id);
+    return res.status(400).json({ ok: false, message: 'Mã không hợp lệ hoặc đã hết hạn.' });
+  }
+
+  const user = getUserByEmail(email);
+  if (!user) return res.status(400).json({ ok: false, message: 'Mã không hợp lệ hoặc đã hết hạn.' });
+  db.transaction(() => {
+    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashPassword(newPassword), user.id);
+    consumePasswordResetCode(reset.id);
+    revokeAllSessions(user.id);
+  })();
+  return res.json({ ok: true, message: 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.' });
 });
 
 app.post('/api/auth/login', rateLimit, (req, res) => {
