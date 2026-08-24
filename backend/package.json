@@ -1,0 +1,18 @@
+{
+  "name": "ducanhvpn-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DucAnhVPN authentication and account API",
+  "main": "server.js",
+  "scripts": {
+    "start": "NODE_ENV=production node server.js",
+    "dev": "NODE_ENV=development node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2"
+  }
+}

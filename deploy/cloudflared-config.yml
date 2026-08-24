@@ -1,0 +1,9 @@
+# Example only. Prefer a remotely managed tunnel configured in the Cloudflare Dashboard.
+# Replace the placeholders before using this file.
+tunnel: TUNNEL_ID
+credentials-file: /etc/cloudflared/TUNNEL_ID.json
+
+ingress:
+  - hostname: api.perral.dpdns.org
+    service: http://127.0.0.1:3000
+  - service: http_status:404

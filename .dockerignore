@@ -1,0 +1,10 @@
+.env
+data/
+node_modules/
+.git/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.pem
+*.key
+README.md
