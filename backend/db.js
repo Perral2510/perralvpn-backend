@@ -105,15 +105,12 @@ db.exec(`
 `);
 
 const PLAN_SEEDS = [
-  { id: 1, slug: 'vn-basic', category: 'vn', name: 'Việt Nam Cơ Bản', nameEn: 'Vietnam Basic', price: 49000, capacity: '100GB', speed: '100Mbps', devices: 2, lifetime: 0, features: ['Node Việt Nam tốc độ cao', 'Hỗ trợ 24/7', 'Không giới hạn thời gian dùng'] },
-  { id: 2, slug: 'vn-pro', category: 'vn', name: 'Việt Nam Pro', nameEn: 'Vietnam Pro', price: 89000, capacity: '300GB', speed: '300Mbps', devices: 4, lifetime: 0, features: ['Node Việt Nam + quốc tế', 'Ưu tiên băng thông', 'Hỗ trợ 24/7'] },
-  { id: 3, slug: 'lifetime-standard', category: 'forever', name: 'Vĩnh Viễn Tiêu Chuẩn', nameEn: 'Lifetime Standard', price: 990000, capacity: '500GB/tháng', speed: '500Mbps', devices: 5, lifetime: 1, features: ['Không giới hạn thời gian', 'Toàn bộ node hệ thống', 'Ưu tiên hỗ trợ'] },
-  { id: 4, slug: 'lifetime-premium', category: 'forever', name: 'Vĩnh Viễn Cao Cấp', nameEn: 'Lifetime Premium', price: 1990000, capacity: 'Không giới hạn', speed: '1Gbps', devices: 10, lifetime: 1, features: ['Không giới hạn dung lượng', 'Node riêng tốc độ cao', 'Hỗ trợ ưu tiên VIP'] },
-  { id: 5, slug: 'global-basic', category: 'global', name: 'Global Basic', nameEn: 'Global Basic', price: 69000, capacity: '150GB', speed: '150Mbps', devices: 3, lifetime: 0, features: ['Node đa quốc gia', 'Unblock streaming quốc tế', 'Hỗ trợ 24/7'] },
-  { id: 6, slug: 'global-ultra', category: 'global', name: 'Global Ultra', nameEn: 'Global Ultra', price: 149000, capacity: '1TB', speed: '700Mbps', devices: 6, lifetime: 0, features: ['Node đa quốc gia cao cấp', 'Unblock streaming quốc tế', 'Băng thông không giới hạn giờ cao điểm'] },
+  { id: 7, slug: 'vina-khong-nen', category: 'vn', name: 'VINA KHÔNG NỀN', nameEn: 'VINA KHÔNG NỀN', price: 15000, capacity: '100GB', speed: '100Mbps', devices: 2, lifetime: 1, features: ['Node Việt Nam tốc độ cao', 'Hỗ trợ 24/7', 'Không giới hạn thời gian dùng'] },
 ];
-const seedPlan = db.prepare(`INSERT OR IGNORE INTO plans (id, slug, category, name, name_en, price_vnd, capacity, speed, device_limit, is_lifetime, features_json) VALUES (@id, @slug, @category, @name, @nameEn, @price, @capacity, @speed, @devices, @lifetime, @features)`);
+const seedPlan = db.prepare(`INSERT INTO plans (id, slug, category, name, name_en, price_vnd, capacity, speed, device_limit, is_lifetime, features_json, is_active) VALUES (@id, @slug, @category, @name, @nameEn, @price, @capacity, @speed, @devices, @lifetime, @features, 1) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, category = excluded.category, name = excluded.name, name_en = excluded.name_en, price_vnd = excluded.price_vnd, capacity = excluded.capacity, speed = excluded.speed, device_limit = excluded.device_limit, is_lifetime = excluded.is_lifetime, features_json = excluded.features_json, is_active = 1`);
 for (const plan of PLAN_SEEDS) seedPlan.run({ ...plan, features: JSON.stringify(plan.features) });
+// Keep historical orders/subscriptions queryable, but remove legacy plans from the storefront and new purchases.
+db.prepare("UPDATE plans SET is_active = CASE WHEN slug = 'vina-khong-nen' THEN 1 ELSE 0 END").run();
 
 function makeUserCode() {
   let code;
