@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/perral/ducanhvpn
+WorkingDirectory=/home/perral/perralvpn
 ExecStart=/usr/bin/docker compose up -d --remove-orphans app
 ExecStop=/usr/bin/docker compose stop app
 RemainAfterExit=yes

@@ -5,8 +5,8 @@ Backend Node.js/Express/SQLite của DucAnhVPN. Repository này dùng để tri�
 ## Chạy trên VPS
 
 ```bash
-git clone https://github.com/Perral2510/ducanhvpn-backend.git ~/ducanhvpn
-cd ~/ducanhvpn
+git clone https://github.com/Perral2510/ducanhvpn-backend.git ~/perralvpn
+cd ~/perralvpn
 cp .env.example .env
 nano .env
 docker compose up -d --build
@@ -58,9 +58,9 @@ sudo systemctl enable --now cloudflared
 ## Tự khởi động
 
 ```bash
-sudo cp deploy/ducanhvpn.service /etc/systemd/system/ducanhvpn.service
+sudo cp deploy/perralvpn.service /etc/systemd/system/perralvpn.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now ducanhvpn
+sudo systemctl enable --now perralvpn
 ```
 
 Service này chỉ quản lý backend Docker; không quản lý 3x-ui/Xray hoặc Cloudflare Tunnel.
