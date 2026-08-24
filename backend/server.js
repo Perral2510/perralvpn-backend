@@ -9,7 +9,7 @@ const {
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
-const sessionCookie = process.env.SESSION_COOKIE_NAME || 'ducanh_session';
+const sessionCookie = process.env.SESSION_COOKIE_NAME || 'perral_session';
 const allowedOrigin = process.env.FRONTEND_ORIGIN || '';
 const attempts = new Map();
 
@@ -90,7 +90,7 @@ function requireAuth(req, res, next) {
 }
 function safeText(value, max = 120) { return String(value || '').trim().slice(0, max); }
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'ducanh-api', time: new Date().toISOString() }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'perral-api', time: new Date().toISOString() }));
 
 const PAYMENT_METHODS = new Set(['bank']);
 const CYCLE_MONTHS = new Set([1, 3, 12]);
@@ -224,4 +224,4 @@ app.use((req, res) => {
   res.status(404).json({ ok: false, message: 'API route not found.' });
 });
 
-app.listen(port, '0.0.0.0', () => console.log(`DucAnhVPN API listening on :${port}`));
+app.listen(port, '0.0.0.0', () => console.log(`PerralVPN API listening on :${port}`));

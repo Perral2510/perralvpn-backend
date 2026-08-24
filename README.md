@@ -1,11 +1,11 @@
-# DucAnhVPN Backend
+# PerralVPN Backend
 
-Backend Node.js/Express/SQLite của DucAnhVPN. Repository này dùng để triển khai trên VPS; frontend được quản lý riêng trong repository `Perral2510/ducanhvpn-frontend`.
+Backend Node.js/Express/SQLite của PerralVPN. Repository này dùng để triển khai trên VPS; frontend được quản lý riêng trong repository `Perral2510/perralvpn-frontend`.
 
 ## Chạy trên VPS
 
 ```bash
-git clone https://github.com/Perral2510/ducanhvpn-backend.git ~/perralvpn
+git clone https://github.com/Perral2510/perralvpn-backend.git ~/perralvpn
 cd ~/perralvpn
 cp .env.example .env
 nano .env

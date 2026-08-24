@@ -1,8 +1,8 @@
 {
-  "name": "ducanhvpn-backend",
+  "name": "perralvpn-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "DucAnhVPN authentication and account API",
+  "description": "PerralVPN authentication and account API",
   "main": "server.js",
   "scripts": {
     "start": "NODE_ENV=production node server.js",
