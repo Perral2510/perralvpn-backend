@@ -1,8 +1,8 @@
 FROM node:20-bookworm-slim
 
 WORKDIR /app
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install --omit=dev
+COPY package*.json ./
+RUN npm ci --omit=dev
 
 COPY . .
 RUN mkdir -p data

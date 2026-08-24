@@ -87,6 +87,21 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_subscriptions_user_status ON subscriptions(user_id, status, expires_at);
+  CREATE TABLE IF NOT EXISTS vpn_provisions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    order_id TEXT NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+    subscription_id TEXT NOT NULL UNIQUE REFERENCES subscriptions(id) ON DELETE CASCADE,
+    xui_email TEXT NOT NULL UNIQUE,
+    client_uuid TEXT NOT NULL,
+    sub_id TEXT NOT NULL UNIQUE,
+    inbound_ids_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','error','expired')),
+    last_error TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_vpn_provisions_user_status ON vpn_provisions(user_id, status, updated_at);
 `);
 
 const PLAN_SEEDS = [
@@ -227,10 +242,81 @@ function markOrderPaid(orderId) {
   db.transaction(() => {
     db.prepare("UPDATE orders SET status = 'paid', updated_at = datetime('now'), paid_at = datetime('now') WHERE id = ?").run(orderId);
     db.prepare("UPDATE subscriptions SET status = 'expired' WHERE user_id = ? AND status = 'active'").run(row.user_id);
+    db.prepare("UPDATE vpn_provisions SET status = 'expired', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'").run(row.user_id);
     db.prepare('INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, started_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(subscriptionId, row.user_id, row.plan_id, orderId, 'active', now.toISOString(), expiresAt);
   })();
   return getOrderByIdForUser(orderId, row.user_id);
+}
+
+function getVpnProvisionContext(orderId) {
+  return db.prepare(`
+    SELECT o.id AS order_id, o.user_id, o.plan_id, o.status AS order_status,
+           s.id AS subscription_id, s.status AS subscription_status, s.started_at, s.expires_at,
+           u.user_id_code, u.email, p.slug AS plan_slug, p.name AS plan_name,
+           p.capacity, p.device_limit, p.is_lifetime
+    FROM orders o
+    JOIN users u ON u.id = o.user_id
+    JOIN plans p ON p.id = o.plan_id
+    JOIN subscriptions s ON s.order_id = o.id
+    WHERE o.id = ?
+  `).get(orderId);
+}
+
+function getVpnProvisionByOrderId(orderId) {
+  return db.prepare('SELECT * FROM vpn_provisions WHERE order_id = ?').get(orderId);
+}
+
+function getActiveVpnProvisionContext(userId) {
+  return db.prepare(`
+    SELECT o.id AS order_id, o.user_id, o.plan_id, o.status AS order_status,
+           s.id AS subscription_id, s.status AS subscription_status, s.started_at, s.expires_at,
+           u.user_id_code, u.email, p.slug AS plan_slug, p.name AS plan_name,
+           p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM subscriptions s
+    JOIN orders o ON o.id = s.order_id
+    JOIN users u ON u.id = s.user_id
+    JOIN plans p ON p.id = s.plan_id
+    WHERE s.user_id = ? AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+    ORDER BY datetime(s.created_at) DESC LIMIT 1
+  `).get(userId);
+}
+
+function getVpnProvisionByUserId(userId) {
+  return db.prepare(`
+    SELECT v.*, s.status AS subscription_status, s.started_at, s.expires_at,
+           p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM vpn_provisions v
+    JOIN subscriptions s ON s.id = v.subscription_id
+    JOIN plans p ON p.id = s.plan_id
+    WHERE v.user_id = ? AND v.status = 'active' AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+    ORDER BY datetime(v.updated_at) DESC LIMIT 1
+  `).get(userId);
+}
+
+function saveVpnProvision({ id, userId, orderId, subscriptionId, xuiEmail, clientUuid, subId, inboundIds, status = 'active', lastError = null }) {
+  db.prepare(`
+    INSERT INTO vpn_provisions
+      (id, user_id, order_id, subscription_id, xui_email, client_uuid, sub_id, inbound_ids_json, status, last_error)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(order_id) DO UPDATE SET
+      xui_email = excluded.xui_email,
+      client_uuid = excluded.client_uuid,
+      sub_id = excluded.sub_id,
+      inbound_ids_json = excluded.inbound_ids_json,
+      status = excluded.status,
+      last_error = excluded.last_error,
+      updated_at = datetime('now')
+  `).run(id, userId, orderId, subscriptionId, xuiEmail, clientUuid, subId, JSON.stringify(inboundIds), status, lastError);
+  return getVpnProvisionByOrderId(orderId);
+}
+
+function updateVpnProvisionStatus(orderId, status, lastError = null) {
+  db.prepare("UPDATE vpn_provisions SET status = ?, last_error = ?, updated_at = datetime('now') WHERE order_id = ?")
+    .run(status, lastError, orderId);
+  return getVpnProvisionByOrderId(orderId);
 }
 
 function getActiveSubscription(userId) {
@@ -301,7 +387,9 @@ function consumePasswordResetCode(id) {
 module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, listPlans, createOrder, getOrderByIdForUser,
-  listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription, createSession,
+  listOrdersForUser, cancelOrderForUser, markOrderPaid, getVpnProvisionContext, getActiveVpnProvisionContext,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, saveVpnProvision, updateVpnProvisionStatus,
+  getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 };

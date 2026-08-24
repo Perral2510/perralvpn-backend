@@ -35,6 +35,16 @@ PORT=3000
 DB_PATH=/app/data/app.sqlite
 FRONTEND_ORIGIN=https://app.perral.dpdns.org
 ADMIN_API_KEY=replace-with-a-long-random-secret
+
+# 3x-ui provisioning (token stays on backend only)
+XUI_BASE_URL=https://panel.example.com
+XUI_API_TOKEN=replace-with-an-admin-scope-3x-ui-api-token
+XUI_SUB_BASE_URL=https://panel.example.com:2096
+XUI_SUB_PATH=/sub/
+XUI_JSON_PATH=/json/
+XUI_CLASH_PATH=/clash/
+XUI_INBOUND_IDS_BY_PLAN={"vn-basic":[3],"vn-pro":[3],"global-basic":[5]}
+XUI_DEFAULT_INBOUND_IDS=
 ```
 
 Không commit `.env`, SQLite hoặc khóa quản trị.
@@ -89,3 +99,11 @@ POST /api/auth/reset-password           { email, code, newPassword }
 Mã chỉ được lưu dưới dạng hash trong SQLite, hết hạn sau thời gian cấu hình, bị giới hạn số lần thử và được đánh dấu đã sử dụng sau khi đổi mật khẩu. Sau khi reset thành công, các session cũ của tài khoản sẽ bị thu hồi.
 
 Không commit `.env`, App Password, database hoặc token vào repository.
+
+## Đồng bộ client với 3x-ui
+
+Backend gọi API của 3x-ui từ server-to-server. Sau khi admin gọi `POST /api/admin/orders/:id/mark-paid`, backend tạo hoặc cập nhật client bằng email nội bộ ổn định theo order, UUID ngẫu nhiên, `subId`, quota theo `capacity`, hạn dùng theo `expires_at`, rồi attach client vào inbound IDs của gói. Luồng này có thể chạy lại an toàn; nếu client đã tồn tại, backend kiểm tra UUID trước khi update để không ghi đè client ngoài PerralVPN.
+
+Mapping gói sang inbound đặt trong `XUI_INBOUND_IDS_BY_PLAN`. Key có thể là plan slug hoặc plan ID. Ví dụ `{"vn-basic":[3],"vn-pro":[3,5]}` nghĩa là gói `vn-pro` được gắn vào inbound 3 và 5. `XUI_SUB_BASE_URL` phải là origin truy cập công khai của subscription server 3x-ui; nếu dùng reverse proxy, hãy bảo đảm các path `/sub`, `/json`, `/clash` được chuyển tới subscription server và URI Path trong 3x-ui khớp với biến môi trường.
+
+Các endpoint user mới là `GET /api/account/vpn` để lấy URL/QR hiện tại và `POST /api/account/vpn/sync` để đồng bộ lại gói đang hoạt động. Response không chứa API token hoặc mật khẩu panel; QR được sinh cục bộ bằng backend. Subscription URL raw, JSON và Clash được hiển thị trên dashboard sau khi đồng bộ.

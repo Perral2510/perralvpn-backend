@@ -3,10 +3,14 @@ const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById,
   createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
+  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId,
+  updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
+const { XuiError, XuiClient, createXuiConfig } = require('./xui');
+const { getSubscriptionPayload, provisionOrder } = require('./xui-provision');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -14,6 +18,8 @@ const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookie = process.env.SESSION_COOKIE_NAME || 'perral_session';
 const allowedOrigin = process.env.FRONTEND_ORIGIN || '';
 const attempts = new Map();
+const xuiConfig = createXuiConfig();
+const xuiClient = xuiConfig ? new XuiClient(xuiConfig) : null;
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
@@ -128,6 +134,42 @@ app.get('/api/account/orders', requireAuth, (req, res) => {
   res.json({ ok: true, data: listOrdersForUser(req.user.id) });
 });
 
+async function syncOrderToXui(orderId) {
+  const context = getVpnProvisionContext(orderId);
+  if (!context) throw new XuiError('Không tìm thấy context gói VPN để đồng bộ.');
+  return provisionOrder({ xui: xuiClient, config: xuiConfig, context });
+}
+
+async function publicVpnSubscription(userId) {
+  const provision = getVpnProvisionByUserId(userId);
+  return provision ? getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, provision }) : null;
+}
+
+app.get('/api/account/vpn', requireAuth, async (req, res) => {
+  try {
+    const data = await publicVpnSubscription(req.user.id);
+    res.json({ ok: true, data });
+  } catch (error) {
+    console.error('VPN subscription read failed:', error.name || 'Error');
+    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Không thể lấy thông tin VPN lúc này.' });
+  }
+});
+
+app.post('/api/account/vpn/sync', requireAuth, async (req, res) => {
+  const context = getActiveVpnProvisionContext(req.user.id);
+  if (!context) return res.status(400).json({ ok: false, message: 'Bạn chưa có gói VPN đang hoạt động.' });
+  try {
+    await syncOrderToXui(context.order_id);
+    const data = await publicVpnSubscription(req.user.id);
+    res.json({ ok: true, message: 'Đã đồng bộ gói VPN với máy chủ.', data });
+  } catch (error) {
+    const existing = getVpnProvisionByOrderId(context.order_id);
+    if (existing) updateVpnProvisionStatus(context.order_id, 'error', '3x-ui synchronization failed');
+    console.error('VPN synchronization failed:', error.name || 'Error');
+    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Không thể đồng bộ gói VPN với máy chủ 3x-ui.' });
+  }
+});
+
 app.post('/api/account/orders', requireAuth, (req, res) => {
   const planId = Number(req.body.planId);
   const plan = getPlanById(planId);
@@ -162,13 +204,19 @@ app.delete('/api/account/orders/:id', requireAuth, (req, res) => {
   res.json({ ok: true, message: 'Đã hủy đơn hàng.' });
 });
 
-app.post('/api/admin/orders/:id/mark-paid', (req, res) => {
+app.post('/api/admin/orders/:id/mark-paid', async (req, res) => {
   const adminKey = process.env.ADMIN_API_KEY;
   if (!adminKey) return res.status(503).json({ ok: false, message: 'Chưa cấu hình khóa quản trị thanh toán.' });
   if (req.get('x-admin-key') !== adminKey) return res.status(401).json({ ok: false, message: 'Không có quyền xác nhận thanh toán.' });
   const order = markOrderPaid(req.params.id);
   if (!order) return res.status(400).json({ ok: false, message: 'Đơn hàng không tồn tại hoặc không thể xác nhận.' });
-  res.json({ ok: true, message: 'Đã xác nhận thanh toán và kích hoạt gói cước.', data: order });
+  try {
+    await syncOrderToXui(req.params.id);
+    res.json({ ok: true, message: 'Đã xác nhận thanh toán, kích hoạt và đồng bộ gói cước.', data: { order, vpnSync: 'active' } });
+  } catch (error) {
+    console.error('VPN provisioning after payment failed:', error.name || 'Error');
+    res.status(502).json({ ok: false, message: 'Đã xác nhận thanh toán nhưng chưa đồng bộ được client 3x-ui. Có thể bấm Đồng bộ lại sau khi kiểm tra cấu hình.', data: { order, vpnSync: 'error' } });
+  }
 });
 
 app.post('/api/auth/register', rateLimit, (req, res) => {
