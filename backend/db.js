@@ -204,6 +204,10 @@ function getPlanById(id) {
   return db.prepare('SELECT * FROM plans WHERE id = ? AND is_active = 1').get(id);
 }
 
+function getPlanBySlug(slug) {
+  return db.prepare('SELECT * FROM plans WHERE slug = ? AND is_active = 1').get(String(slug || '').trim());
+}
+
 function listPlans() {
   return db.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY id').all().map(publicPlan);
 }
@@ -386,7 +390,7 @@ function consumePasswordResetCode(id) {
 
 module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
-  getUserById, getUserByEmail, getPlanById, listPlans, createOrder, getOrderByIdForUser,
+  getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, getVpnProvisionContext, getActiveVpnProvisionContext,
   getVpnProvisionByOrderId, getVpnProvisionByUserId, saveVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,

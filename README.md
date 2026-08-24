@@ -107,3 +107,14 @@ Backend gọi API của 3x-ui từ server-to-server. Sau khi admin gọi `POST /
 Mapping gói sang inbound đặt trong `XUI_INBOUND_IDS_BY_PLAN`. Key có thể là plan slug hoặc plan ID. Ví dụ `{"vn-basic":[3],"vn-pro":[3,5]}` nghĩa là gói `vn-pro` được gắn vào inbound 3 và 5. `XUI_SUB_BASE_URL` phải là origin truy cập công khai của subscription server 3x-ui; nếu dùng reverse proxy, hãy bảo đảm các path `/sub`, `/json`, `/clash` được chuyển tới subscription server và URI Path trong 3x-ui khớp với biến môi trường.
 
 Các endpoint user mới là `GET /api/account/vpn` để lấy URL/QR hiện tại và `POST /api/account/vpn/sync` để đồng bộ lại gói đang hoạt động. Response không chứa API token hoặc mật khẩu panel; QR được sinh cục bộ bằng backend. Subscription URL raw, JSON và Clash được hiển thị trên dashboard sau khi đồng bộ.
+
+Admin có thể cấp trực tiếp một gói cho tài khoản đã tồn tại bằng endpoint `POST /api/admin/grant-plan`. Endpoint này tạo một order audit có phương thức `admin_grant`, đánh dấu paid, hết hạn subscription cũ của user, provision client 3x-ui mới và trả thông tin subscription:
+
+```bash
+curl -sS -X POST https://api.example.com/api/admin/grant-plan \
+  -H 'Content-Type: application/json' \
+  -H 'x-admin-key: ADMIN_API_KEY_TRÊN_VPS' \
+  -d '{"email":"facebook.tnlb@gmail.com","planSlug":"lifetime-premium"}'
+```
+
+Không đặt `x-admin-key` trong frontend hoặc gửi nó qua chat. Response thành công có `data.vpn.subscriptionUrl`, `data.vpn.jsonUrl`, `data.vpn.clashUrl` và `data.vpn.qrDataUrl`.

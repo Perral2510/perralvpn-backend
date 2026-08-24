@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto = require('node:crypto');
 const {
-  db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById,
+  db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
   createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
   getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId,
   updateVpnProvisionStatus,
@@ -202,6 +202,39 @@ app.delete('/api/account/orders/:id', requireAuth, (req, res) => {
   const cancelled = cancelOrderForUser(req.params.id, req.user.id);
   if (!cancelled) return res.status(400).json({ ok: false, message: 'Đơn hàng không tồn tại hoặc không thể hủy.' });
   res.json({ ok: true, message: 'Đã hủy đơn hàng.' });
+});
+
+app.post('/api/admin/grant-plan', async (req, res) => {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) return res.status(503).json({ ok: false, message: 'Chưa cấu hình khóa quản trị thanh toán.' });
+  if (req.get('x-admin-key') !== adminKey) return res.status(401).json({ ok: false, message: 'Không có quyền cấp gói.' });
+
+  const identifier = String(req.body.email || req.body.userId || '').trim();
+  const planSlug = String(req.body.planSlug || '').trim();
+  const user = identifier.includes('@') ? getUserByEmail(identifier) : db.prepare('SELECT * FROM users WHERE user_id_code = ?').get(identifier);
+  const plan = getPlanBySlug(planSlug);
+  if (!user) return res.status(404).json({ ok: false, message: 'Không tìm thấy tài khoản.' });
+  if (!plan) return res.status(404).json({ ok: false, message: 'Không tìm thấy gói VPN hoặc gói đã ngừng bán.' });
+
+  const order = createOrder({
+    userId: user.id,
+    planId: plan.id,
+    cycleMonths: 1,
+    subtotal: plan.price_vnd,
+    discount: plan.price_vnd,
+    total: 0,
+    paymentMethod: 'admin_grant',
+  });
+  const paidOrder = markOrderPaid(order.id);
+  if (!paidOrder) return res.status(500).json({ ok: false, message: 'Không thể tạo subscription audit.' });
+  try {
+    await syncOrderToXui(order.id);
+    const vpn = await publicVpnSubscription(user.id);
+    return res.json({ ok: true, message: 'Đã cấp gói VPN và đồng bộ client 3x-ui.', data: { order: paidOrder, vpn } });
+  } catch (error) {
+    console.error('Direct VPN grant failed:', error.name || 'Error');
+    return res.status(502).json({ ok: false, message: 'Đã tạo subscription nhưng chưa provision được client 3x-ui.', data: { order: paidOrder, vpnSync: 'error' } });
+  }
 });
 
 app.post('/api/admin/orders/:id/mark-paid', async (req, res) => {
