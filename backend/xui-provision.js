@@ -35,9 +35,12 @@ function resolveInboundIds(config, context) {
 }
 
 function makeXuiEmail(context) {
+  // 3x-ui calls this field "email"; keep the user's real account email visible.
+  // The Xray client id remains the UUID generated below.
+  const accountEmail = String(context.email || '').trim().toLowerCase();
+  if (accountEmail && accountEmail.length <= 100) return accountEmail;
   const userPart = String(context.user_id_code || context.user_id).replace(/[^a-zA-Z0-9_-]/g, '-');
-  const orderPart = String(context.order_id).replace(/[^a-zA-Z0-9_-]/g, '-');
-  return `perral-${userPart}-${orderPart}`.slice(0, 100);
+  return `perral-${userPart}`.slice(0, 100);
 }
 
 function expiryTimestamp(context) {

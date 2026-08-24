@@ -102,7 +102,7 @@ Không commit `.env`, App Password, database hoặc token vào repository.
 
 ## Đồng bộ client với 3x-ui
 
-Backend gọi API của 3x-ui từ server-to-server. Sau khi admin gọi `POST /api/admin/orders/:id/mark-paid`, backend tạo hoặc cập nhật client bằng email nội bộ ổn định theo order, UUID ngẫu nhiên, `subId`, quota theo `capacity`, hạn dùng theo `expires_at`, rồi attach client vào inbound IDs của gói. Luồng này có thể chạy lại an toàn; nếu client đã tồn tại, backend kiểm tra UUID trước khi update để không ghi đè client ngoài PerralVPN.
+Backend gọi API của 3x-ui từ server-to-server. Sau khi admin gọi `POST /api/admin/orders/:id/mark-paid`, backend tạo hoặc cập nhật client với **email tài khoản PerralVPN** ở trường Email, **UUID ngẫu nhiên** ở trường ID bắt buộc của Xray, `subId`, quota theo `capacity`, hạn dùng theo `expires_at`, rồi attach client vào inbound IDs của gói. Luồng này có thể chạy lại an toàn; nếu client đã tồn tại, backend kiểm tra UUID/comment trước khi update để không ghi đè client ngoài PerralVPN.
 
 Mapping gói sang inbound đặt trong `XUI_INBOUND_IDS_BY_PLAN`. Với gói hiện tại, key là `vina-khong-nen`; thay ID `3` bằng inbound VLESS/VMess thật trên VPS. `XUI_SUB_BASE_URL` phải là origin truy cập công khai của subscription server 3x-ui; nếu dùng reverse proxy, hãy bảo đảm các path `/sub`, `/json`, `/clash` được chuyển tới subscription server và URI Path trong 3x-ui khớp với biến môi trường.
 

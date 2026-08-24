@@ -302,8 +302,10 @@ function saveVpnProvision({ id, userId, orderId, subscriptionId, xuiEmail, clien
     INSERT INTO vpn_provisions
       (id, user_id, order_id, subscription_id, xui_email, client_uuid, sub_id, inbound_ids_json, status, last_error)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(order_id) DO UPDATE SET
-      xui_email = excluded.xui_email,
+    ON CONFLICT(xui_email) DO UPDATE SET
+      user_id = excluded.user_id,
+      order_id = excluded.order_id,
+      subscription_id = excluded.subscription_id,
       client_uuid = excluded.client_uuid,
       sub_id = excluded.sub_id,
       inbound_ids_json = excluded.inbound_ids_json,
