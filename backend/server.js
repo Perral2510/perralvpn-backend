@@ -122,7 +122,7 @@ function genericResetResponse(res) {
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'perral-api', time: new Date().toISOString() }));
 
 const PAYMENT_METHODS = new Set(['bank']);
-const CYCLE_MONTHS = new Set([1, 3, 12]);
+const CYCLE_MONTHS = new Set([1, 3, 6, 12]);
 function paymentInfo(order) {
   return {
     method: 'bank',
@@ -265,7 +265,8 @@ app.post('/api/account/orders', requireAuth, (req, res) => {
   if (!CYCLE_MONTHS.has(cycleMonths)) return res.status(400).json({ ok: false, message: 'Chu kỳ thanh toán không hợp lệ.' });
   if (!PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ ok: false, message: 'Phương thức thanh toán này chưa được tích hợp.' });
   const subtotal = plan.price_vnd * cycleMonths;
-  const cycleDiscount = cycleMonths === 3 ? Math.round(subtotal * 0.05) : cycleMonths === 12 ? Math.round(subtotal * 0.15) : 0;
+  const cycleDiscountRate = { 1: 0, 3: 0.05, 6: 0.07, 12: 0.10 }[cycleMonths] ?? 0;
+  const cycleDiscount = Math.round(subtotal * cycleDiscountRate);
   const promoDiscount = promoCode.startsWith('DAV') ? Math.round((subtotal - cycleDiscount) * 0.1) : 0;
   const discount = cycleDiscount + promoDiscount;
   const total = Math.max(0, subtotal - discount);

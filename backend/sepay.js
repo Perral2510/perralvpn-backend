@@ -9,7 +9,8 @@ function getSepayConfig() {
   const secretKey = String(process.env.SEPAY_SECRET_KEY || '').trim();
   if (!merchantId || !secretKey) return null;
   const env = process.env.SEPAY_ENV === 'production' ? 'production' : 'sandbox';
-  const frontendOrigin = normalizeOrigin(process.env.FRONTEND_ORIGIN || process.env.PUBLIC_FRONTEND_URL);
+  const configuredOrigins = String(process.env.FRONTEND_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
+  const frontendOrigin = normalizeOrigin(process.env.FRONTEND_ORIGIN || process.env.PUBLIC_FRONTEND_URL || configuredOrigins[0]);
   if (!frontendOrigin) throw new Error('FRONTEND_ORIGIN is required for SePay callback URLs');
   return { merchantId, secretKey, env, frontendOrigin };
 }

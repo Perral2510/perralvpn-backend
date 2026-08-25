@@ -147,7 +147,7 @@ db.exec(`
 `);
 
 const PLAN_SEEDS = [
-  { id: 7, slug: 'vina-khong-nen', category: 'vn', name: 'VINA KHÔNG NỀN', nameEn: 'VINA KHÔNG NỀN', price: 15000, capacity: '100GB', speed: '100Mbps', devices: 2, lifetime: 1, features: ['Node Việt Nam tốc độ cao', 'Hỗ trợ 24/7', 'Không giới hạn thời gian dùng'] },
+  { id: 7, slug: 'vina-khong-nen', category: 'vn', name: 'VINA KHÔNG NỀN', nameEn: 'VINA KHÔNG NỀN', price: 15000, capacity: '100GB', speed: '100Mbps', devices: 2, lifetime: 0, features: ['Node Việt Nam tốc độ cao', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
 ];
 const seedPlan = db.prepare(`INSERT INTO plans (id, slug, category, name, name_en, price_vnd, capacity, speed, device_limit, is_lifetime, features_json, is_active) VALUES (@id, @slug, @category, @name, @nameEn, @price, @capacity, @speed, @devices, @lifetime, @features, 1) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, category = excluded.category, name = excluded.name, name_en = excluded.name_en, price_vnd = excluded.price_vnd, capacity = excluded.capacity, speed = excluded.speed, device_limit = excluded.device_limit, is_lifetime = excluded.is_lifetime, features_json = excluded.features_json, is_active = 1`);
 for (const plan of PLAN_SEEDS) seedPlan.run({ ...plan, features: JSON.stringify(plan.features) });
