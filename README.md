@@ -33,7 +33,7 @@ Trong `.env`, đặt:
 NODE_ENV=production
 PORT=3000
 DB_PATH=/app/data/app.sqlite
-FRONTEND_ORIGIN=https://app.perral.dpdns.org
+FRONTEND_ORIGINS=https://perral.dpdns.org,https://app.perral.dpdns.org
 ADMIN_API_KEY=replace-with-a-long-random-secret
 
 # 3x-ui provisioning (token stays on backend only)
@@ -143,7 +143,7 @@ SEPAY_MERCHANT_ID=merchant-id-cua-sandbox
 SEPAY_SECRET_KEY=secret-key-cua-sandbox
 SEPAY_IPN_SECRET_KEY=secret-key-ipn-cua-sandbox
 SEPAY_PAYMENT_METHOD=BANK_TRANSFER
-FRONTEND_ORIGIN=https://app.perral.dpdns.org
+FRONTEND_ORIGINS=https://perral.dpdns.org,https://app.perral.dpdns.org
 ```
 
 Trong dashboard SePay, cấu hình IPN URL trỏ tới:
@@ -152,7 +152,7 @@ Trong dashboard SePay, cấu hình IPN URL trỏ tới:
 https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
-IPN có thể dùng header `X-Secret-Key` nếu merchant chọn phương thức xác thực `SECRET_KEY` trong SePay. Khi đó đặt `SEPAY_IPN_AUTH_REQUIRED=true` và dùng cùng Secret Key merchant trong `SEPAY_IPN_SECRET_KEY`. Nếu IPN đang để không xác thực, đặt `SEPAY_IPN_AUTH_REQUIRED=false`; `SEPAY_SECRET_KEY` vẫn bắt buộc cho việc ký form checkout. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
+IPN dùng header `X-Secret-Key` khi merchant chọn phương thức xác thực `SECRET_KEY` trong SePay. Với Sandbox connectivity test không có header, có thể đặt `SEPAY_IPN_AUTH_REQUIRED=false`; `SEPAY_SECRET_KEY` vẫn bắt buộc cho việc ký form checkout. Ở Production, backend luôn bắt buộc `SEPAY_IPN_SECRET_KEY` và từ chối IPN không có hoặc có Secret Key sai, bất kể cờ cấu hình này được đặt thế nào. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
 
 Để chạy production, thay `SEPAY_ENV=production` và dùng đúng `SEPAY_MERCHANT_ID`, `SEPAY_SECRET_KEY`, `SEPAY_IPN_SECRET_KEY` của Production. Sandbox và Production dùng credential/endpoint riêng. Cần kiểm tra URL public, HTTPS và IPN trong dashboard SePay trước khi chuyển tiền thật.
 

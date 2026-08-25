@@ -40,11 +40,21 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (req.path.startsWith('/api/auth') || req.path.startsWith('/api/account')) res.setHeader('Cache-Control', 'no-store');
+  if (isProduction && req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   const requestOrigin = String(req.headers.origin || '').trim().replace(/\/$/, '');
   if (requestOrigin && allowedOrigins.has(requestOrigin)) {
     res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
+  }
+  // Browser state-changing requests must originate from an allowlisted frontend.
+  // SePay IPN is server-to-server and normally has no Origin header.
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+      && !req.path.startsWith('/api/webhooks/sepay')
+      && requestOrigin
+      && !allowedOrigins.has(requestOrigin)) {
+    return res.status(403).json({ ok: false, message: 'Origin không được phép.' });
   }
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -304,7 +314,11 @@ app.get('/api/webhooks/sepay/ipn', (_req, res) => {
 app.post('/api/webhooks/sepay/ipn', (req, res) => {
   const expectedSecret = getSepayIpnSecret();
   const providedSecret = String(req.get('X-Secret-Key') || '').trim();
-  const ipnAuthRequired = ['1', 'true', 'yes', 'secret_key'].includes(String(process.env.SEPAY_IPN_AUTH_REQUIRED || '').trim().toLowerCase());
+  const configuredIpnAuth = String(process.env.SEPAY_IPN_AUTH_REQUIRED || '').trim().toLowerCase();
+  const isSepayProduction = String(process.env.SEPAY_ENV || '').trim().toLowerCase() === 'production';
+  // Never allow unauthenticated payment notifications in Production.
+  const ipnAuthRequired = isSepayProduction
+    || ['1', 'true', 'yes', 'secret_key'].includes(configuredIpnAuth);
   if (ipnAuthRequired && !expectedSecret) return res.status(503).json({ success: false, message: 'SePay IPN secret is not configured.' });
   if (providedSecret && (!expectedSecret || !safeCompare(providedSecret, expectedSecret))) return res.status(401).json({ success: false, message: 'Unauthorized.' });
   if (ipnAuthRequired && !providedSecret) return res.status(401).json({ success: false, message: 'Unauthorized.' });
