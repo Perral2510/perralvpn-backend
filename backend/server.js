@@ -208,13 +208,16 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
   try {
     const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
     const subscriptionName = getSubscriptionName({ group, config: xuiConfig });
+    const wantsPlain = String(req.query.format || '').toLowerCase() === 'plain';
+    const responseText = wantsPlain ? `${text.trim()}\n` : Buffer.from(`${text.trim()}\n`, 'utf8').toString('base64');
     const filename = encodeURIComponent(`${subscriptionName}.txt`);
     res.set({
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
       'Content-Disposition': `inline; filename*=UTF-8''${filename}`,
+      'X-Subscription-Format': wantsPlain ? 'vless-url-lines' : 'base64-vless-url-lines',
       'X-Subscription-Name': subscriptionName,
-    }).type('text/plain').send(text);
+    }).type('text/plain').send(responseText);
   } catch (error) {
     console.error('Custom subscription build failed:', error.name || 'Error');
     res.status(500).type('text/plain').send('Server error');

@@ -257,18 +257,26 @@ async function rotateSubscriptionCredentials({ xui, config, group }) {
     for (const stored of storedClients) {
       const existing = await xui.getClient(stored.xui_email);
       const identity = existing?.client || existing;
-      if (!identity || identity.id !== stored.client_uuid) {
+      const identityContext = contextFor(stored.xui_email);
+      const expectedClient = buildClient(identityContext, {
+        clientUuid: stored.client_uuid,
+        xuiEmail: stored.xui_email,
+        subId: group.sub_id,
+      }, config);
+      const owned = identity && isOwnedPerralClient(identity, expectedClient, identityContext, config);
+      if (!identity || !owned) {
         throw new XuiError(`Không thể xác minh client 3x-ui của ${stored.xui_email}; dừng reset để tránh mất kết nối.`);
       }
       const nextUuid = crypto.randomUUID();
-      const oldSubId = String(identity.subId || group.sub_id);
-      const nextClient = buildClient(contextFor(stored.xui_email), {
+      const oldUuid = String(identity.id || stored.client_uuid);
+      const oldSubId = String(identity.subId || identity.sub_id || group.sub_id);
+      const nextClient = buildClient(identityContext, {
         clientUuid: nextUuid,
         xuiEmail: stored.xui_email,
         subId: newSubId,
       }, config);
       await xui.updateClient(stored.xui_email, nextClient);
-      updated.push({ xuiEmail: stored.xui_email, oldUuid: stored.client_uuid, oldSubId, clientUuid: nextUuid });
+      updated.push({ xuiEmail: stored.xui_email, oldUuid, oldSubId, clientUuid: nextUuid });
     }
 
     const primary = updated.find((item) => item.xuiEmail === primaryProvision?.xui_email) || updated[0];
