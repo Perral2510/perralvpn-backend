@@ -130,3 +130,28 @@ curl -sS -X POST https://api.example.com/api/admin/grant-plan \
 ```
 
 Không đặt `x-admin-key` trong frontend hoặc gửi nó qua chat. Response thành công có `data.vpn.subscriptionUrl`, `data.vpn.jsonUrl`, `data.vpn.clashUrl` và `data.vpn.qrDataUrl`.
+
+## Hosted checkout SePay
+
+Backend hỗ trợ luồng checkout hosted của SePay. Người dùng tạo đơn trên frontend, frontend gọi `POST /api/account/orders/:id/checkout`, backend tạo các field đã ký bằng merchant secret rồi frontend submit form sang cổng SePay. Merchant secret không bao giờ được gửi vào frontend.
+
+Cấu hình trong `.env`:
+
+```env
+SEPAY_ENV=sandbox
+SEPAY_MERCHANT_ID=merchant-id-cua-sandbox
+SEPAY_SECRET_KEY=secret-key-cua-sandbox
+SEPAY_IPN_SECRET_KEY=secret-key-ipn-cua-sandbox
+SEPAY_PAYMENT_METHOD=BANK_TRANSFER
+FRONTEND_ORIGIN=https://app.perral.dpdns.org
+```
+
+Trong dashboard SePay, cấu hình IPN URL trỏ tới:
+
+```text
+https://api.perral.dpdns.org/api/webhooks/sepay/ipn
+```
+
+IPN endpoint dùng header `X-Secret-Key`, lưu trong `SEPAY_IPN_SECRET_KEY`. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
+
+Để chạy production, thay `SEPAY_ENV=production` và dùng đúng `SEPAY_MERCHANT_ID`, `SEPAY_SECRET_KEY`, `SEPAY_IPN_SECRET_KEY` của Production. Sandbox và Production dùng credential/endpoint riêng. Cần kiểm tra URL public, HTTPS và IPN trong dashboard SePay trước khi chuyển tiền thật.

@@ -2,7 +2,8 @@ const express = require('express');
 const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
-  createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
+  createOrder, getOrderById, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid,
+  insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getActiveSubscription,
   getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients,
   updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
@@ -11,6 +12,7 @@ const {
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 const { XuiError, XuiClient, createXuiConfig, randomSubId } = require('./xui');
 const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds } = require('./xui-provision');
+const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -23,6 +25,8 @@ const xuiClient = xuiConfig ? new XuiClient(xuiConfig) : null;
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+// SePay IPN must verify the exact raw JSON bytes when the provider signs the request.
+app.use('/api/webhooks/sepay', express.raw({ type: 'application/json', limit: '100kb' }));
 app.use(express.json({ limit: '50kb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -258,7 +262,107 @@ app.post('/api/account/orders', requireAuth, (req, res) => {
   const discount = cycleDiscount + promoDiscount;
   const total = Math.max(0, subtotal - discount);
   const order = createOrder({ userId: req.user.id, planId, cycleMonths, subtotal, discount, total, paymentMethod });
-  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, vui lòng chuyển khoản để chờ đối soát.', data: { order, payment: paymentInfo(order) } });
+  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới cổng thanh toán SePay.', data: { order } });
+});
+
+app.post('/api/account/orders/:id/checkout', requireAuth, (req, res) => {
+  const order = getOrderByIdForUser(req.params.id, req.user.id);
+  if (!order) return res.status(404).json({ ok: false, message: 'Không tìm thấy đơn hàng.' });
+  if (order.status !== 'pending') return res.status(400).json({ ok: false, message: 'Đơn hàng không còn chờ thanh toán.' });
+  try {
+    const checkout = getSepayCheckout(order, req.user);
+    if (!checkout) return res.status(503).json({ ok: false, message: 'Cổng thanh toán SePay chưa được cấu hình trên máy chủ.' });
+    return res.json({ ok: true, data: checkout });
+  } catch (error) {
+    console.error('SePay checkout initialization failed:', error.name || 'Error');
+    return res.status(502).json({ ok: false, message: 'Không thể khởi tạo cổng thanh toán lúc này.' });
+  }
+});
+
+function sepayIpnPayload(req) {
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {}));
+  try {
+    return { rawBody, payload: JSON.parse(rawBody.toString('utf8')) };
+  } catch {
+    return { rawBody, payload: null };
+  }
+}
+
+app.post('/api/webhooks/sepay/ipn', (req, res) => {
+  const expectedSecret = getSepayIpnSecret();
+  const providedSecret = String(req.get('X-Secret-Key') || '').trim();
+  if (!expectedSecret) return res.status(503).json({ success: false, message: 'SePay IPN secret is not configured.' });
+  if (!safeCompare(providedSecret, expectedSecret)) return res.status(401).json({ success: false, message: 'Unauthorized.' });
+
+  const { rawBody, payload } = sepayIpnPayload(req);
+  if (!payload || typeof payload !== 'object') return res.status(400).json({ success: false, message: 'Invalid JSON.' });
+  const orderData = payload.order || {};
+  const transactionData = payload.transaction || {};
+  const sepayId = String(transactionData.id || orderData.id || '').trim();
+  if (!sepayId) return res.status(400).json({ success: false, message: 'Missing transaction ID.' });
+
+  const invoiceNumber = safeText(orderData.order_invoice_number, 100);
+  const order = invoiceNumber ? getOrderById(invoiceNumber) : null;
+  const orderAmount = Number(orderData.order_amount);
+  const transactionAmount = Number(transactionData.transaction_amount);
+  const notificationType = safeText(payload.notification_type, 40).toUpperCase();
+  const transactionStatus = safeText(transactionData.transaction_status, 40).toUpperCase();
+  const event = insertSepayTransaction({
+    sepayId,
+    orderId: order?.id || null,
+    notificationType,
+    orderStatus: safeText(orderData.order_status, 40).toUpperCase() || null,
+    transactionStatus: transactionStatus || null,
+    paymentMethod: safeText(transactionData.payment_method, 40).toUpperCase() || null,
+    transactionId: safeText(transactionData.transaction_id, 120) || null,
+    transactionAmountVnd: Number.isFinite(transactionAmount) ? transactionAmount : null,
+    orderAmountVnd: Number.isFinite(orderAmount) ? orderAmount : null,
+    currency: safeText(transactionData.transaction_currency || orderData.order_currency, 10).toUpperCase() || null,
+    transactionDate: safeText(transactionData.transaction_date, 40) || null,
+    rawPayload: rawBody.toString('utf8'),
+  });
+
+  // Retries/replays are acknowledged without running business logic again.
+  if (!event.inserted) return res.status(200).json({ success: true });
+
+  const validPayment = notificationType === 'ORDER_PAID'
+    && String(orderData.order_status || '').toUpperCase() === 'CAPTURED'
+    && transactionStatus === 'APPROVED'
+    && String(transactionData.transaction_type || '').toUpperCase() === 'PAYMENT'
+    && String(transactionData.transaction_currency || orderData.order_currency || '').toUpperCase() === 'VND'
+    && Number.isFinite(orderAmount) && Number.isFinite(transactionAmount)
+    && orderAmount === transactionAmount;
+
+  if (!validPayment) {
+    updateSepayTransaction(sepayId, { orderId: order?.id, processingStatus: 'ignored', processingError: 'Payment event was not an approved VND order with matching amount.' });
+    return res.status(200).json({ success: true });
+  }
+  if (!order) {
+    updateSepayTransaction(sepayId, { processingStatus: 'ignored', processingError: `Order not found for invoice ${invoiceNumber}.` });
+    return res.status(200).json({ success: true });
+  }
+  if (order.status === 'paid') {
+    updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'processed' });
+    return res.status(200).json({ success: true });
+  }
+  if (order.status !== 'pending') {
+    updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'ignored', processingError: `Order status is ${order.status}.` });
+    return res.status(200).json({ success: true });
+  }
+
+  const paidOrder = markOrderPaid(order.id, sepayId);
+  if (!paidOrder) {
+    updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'error', processingError: 'Could not mark order paid.' });
+    return res.status(500).json({ success: false, message: 'Could not process payment.' });
+  }
+  updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'processed' });
+
+  // Mark the order first, then provision asynchronously so SePay receives a fast 200.
+  void syncOrderToXui(order.id).catch((error) => {
+    console.error('SePay-paid order VPN provisioning failed:', error.name || 'Error');
+    updateVpnProvisionStatus(order.id, 'error', 'Provisioning after SePay IPN failed');
+  });
+  return res.status(200).json({ success: true });
 });
 
 app.post('/api/account/orders/:id/payment-submitted', requireAuth, (req, res) => {

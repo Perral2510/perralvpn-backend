@@ -76,6 +76,28 @@ db.exec(`
     UNIQUE(user_id, id)
   );
   CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_ref ON orders(payment_ref) WHERE payment_ref IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS sepay_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sepay_id TEXT NOT NULL UNIQUE,
+    order_id TEXT REFERENCES orders(id),
+    notification_type TEXT NOT NULL,
+    order_status TEXT,
+    transaction_status TEXT,
+    payment_method TEXT,
+    transaction_id TEXT,
+    transaction_amount_vnd INTEGER,
+    order_amount_vnd INTEGER,
+    currency TEXT,
+    transaction_date TEXT,
+    raw_payload TEXT NOT NULL,
+    processing_status TEXT NOT NULL DEFAULT 'received' CHECK (processing_status IN ('received','processed','ignored','error')),
+    processing_error TEXT,
+    received_at TEXT NOT NULL DEFAULT (datetime('now')),
+    processed_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_sepay_transactions_order_id ON sepay_transactions(order_id, received_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_sepay_transactions_status ON sepay_transactions(processing_status, received_at DESC);
   CREATE TABLE IF NOT EXISTS subscriptions (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -261,7 +283,7 @@ function cancelOrderForUser(id, userId) {
   return result.changes > 0;
 }
 
-function markOrderPaid(orderId) {
+function markOrderPaid(orderId, paymentRef = null) {
   const row = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   if (!row) return null;
   if (row.status === 'paid') return getOrderByIdForUser(orderId, row.user_id);
@@ -272,7 +294,7 @@ function markOrderPaid(orderId) {
   const expiresAt = plan.is_lifetime ? null : new Date(now.getTime() + row.cycle_months * 30 * 24 * 60 * 60 * 1000).toISOString();
   const subscriptionId = crypto.randomUUID();
   db.transaction(() => {
-    db.prepare("UPDATE orders SET status = 'paid', updated_at = datetime('now'), paid_at = datetime('now') WHERE id = ?").run(orderId);
+    db.prepare("UPDATE orders SET status = 'paid', payment_ref = COALESCE(?, payment_ref), updated_at = datetime('now'), paid_at = datetime('now') WHERE id = ?").run(paymentRef, orderId);
     db.prepare("UPDATE subscriptions SET status = 'expired' WHERE user_id = ? AND status = 'active'").run(row.user_id);
     db.prepare("UPDATE vpn_provisions SET status = 'expired', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'").run(row.user_id);
     db.prepare("UPDATE vpn_subscription_groups SET status = 'expired', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'").run(row.user_id);
@@ -280,6 +302,51 @@ function markOrderPaid(orderId) {
       .run(subscriptionId, row.user_id, row.plan_id, orderId, 'active', now.toISOString(), expiresAt);
   })();
   return getOrderByIdForUser(orderId, row.user_id);
+}
+
+function insertSepayTransaction({
+  sepayId,
+  orderId = null,
+  notificationType,
+  orderStatus = null,
+  transactionStatus = null,
+  paymentMethod = null,
+  transactionId = null,
+  transactionAmountVnd = null,
+  orderAmountVnd = null,
+  currency = null,
+  transactionDate = null,
+  rawPayload,
+}) {
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO sepay_transactions
+      (sepay_id, order_id, notification_type, order_status, transaction_status, payment_method,
+       transaction_id, transaction_amount_vnd, order_amount_vnd, currency, transaction_date, raw_payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    String(sepayId), orderId, notificationType, orderStatus, transactionStatus, paymentMethod,
+    transactionId, transactionAmountVnd, orderAmountVnd, currency, transactionDate,
+    typeof rawPayload === 'string' ? rawPayload : JSON.stringify(rawPayload),
+  );
+  return { inserted: result.changes > 0, transaction: db.prepare('SELECT * FROM sepay_transactions WHERE sepay_id = ?').get(String(sepayId)) };
+}
+
+function updateSepayTransaction(sepayId, { orderId, processingStatus, processingError = null }) {
+  db.prepare(`
+    UPDATE sepay_transactions
+    SET order_id = COALESCE(?, order_id), processing_status = ?, processing_error = ?,
+        processed_at = CASE WHEN ? IN ('processed', 'ignored', 'error') THEN datetime('now') ELSE processed_at END
+    WHERE sepay_id = ?
+  `).run(orderId || null, processingStatus, processingError, processingStatus, String(sepayId));
+  return db.prepare('SELECT * FROM sepay_transactions WHERE sepay_id = ?').get(String(sepayId));
+}
+
+function getSepayTransactionById(sepayId) {
+  return db.prepare('SELECT * FROM sepay_transactions WHERE sepay_id = ?').get(String(sepayId));
+}
+
+function getOrderById(orderId) {
+  return db.prepare('SELECT * FROM orders WHERE id = ?').get(String(orderId));
 }
 
 function getVpnProvisionContext(orderId) {
@@ -515,8 +582,8 @@ function consumePasswordResetCode(id) {
 
 module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
-  getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderByIdForUser,
-  listOrdersForUser, cancelOrderForUser, markOrderPaid, getVpnProvisionContext, getActiveVpnProvisionContext,
+  getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderById, getOrderByIdForUser,
+  listOrdersForUser, cancelOrderForUser, markOrderPaid, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
   getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
