@@ -307,7 +307,9 @@ app.post('/api/webhooks/sepay/ipn', (req, res) => {
   const orderData = payload.order || {};
   const transactionData = payload.transaction || {};
   const sepayId = String(transactionData.id || orderData.id || '').trim();
-  if (!sepayId) return res.status(400).json({ success: false, message: 'Missing transaction ID.' });
+  // SePay's dashboard test may send a connectivity ping without a real transaction.
+  // Acknowledge it with 200, but never mark an order paid without a complete IPN.
+  if (!sepayId) return res.status(200).json({ success: true });
 
   const invoiceNumber = safeText(orderData.order_invoice_number, 100);
   const order = invoiceNumber ? getOrderById(invoiceNumber) : null;
