@@ -297,8 +297,10 @@ app.get('/api/webhooks/sepay/ipn', (_req, res) => {
 app.post('/api/webhooks/sepay/ipn', (req, res) => {
   const expectedSecret = getSepayIpnSecret();
   const providedSecret = String(req.get('X-Secret-Key') || '').trim();
-  if (!expectedSecret) return res.status(503).json({ success: false, message: 'SePay IPN secret is not configured.' });
-  if (!safeCompare(providedSecret, expectedSecret)) return res.status(401).json({ success: false, message: 'Unauthorized.' });
+  const ipnAuthRequired = ['1', 'true', 'yes', 'secret_key'].includes(String(process.env.SEPAY_IPN_AUTH_REQUIRED || '').trim().toLowerCase());
+  if (ipnAuthRequired && !expectedSecret) return res.status(503).json({ success: false, message: 'SePay IPN secret is not configured.' });
+  if (providedSecret && (!expectedSecret || !safeCompare(providedSecret, expectedSecret))) return res.status(401).json({ success: false, message: 'Unauthorized.' });
+  if (ipnAuthRequired && !providedSecret) return res.status(401).json({ success: false, message: 'Unauthorized.' });
 
   const { rawBody, payload } = sepayIpnPayload(req);
   if (!payload || typeof payload !== 'object') return res.status(400).json({ success: false, message: 'Invalid JSON.' });

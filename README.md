@@ -152,7 +152,7 @@ Trong dashboard SePay, cấu hình IPN URL trỏ tới:
 https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
-IPN endpoint dùng header `X-Secret-Key`, lưu trong `SEPAY_IPN_SECRET_KEY`. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
+IPN có thể dùng header `X-Secret-Key` nếu merchant chọn phương thức xác thực `SECRET_KEY` trong SePay. Khi đó đặt `SEPAY_IPN_AUTH_REQUIRED=true` và dùng cùng Secret Key merchant trong `SEPAY_IPN_SECRET_KEY`. Nếu IPN đang để không xác thực, đặt `SEPAY_IPN_AUTH_REQUIRED=false`; `SEPAY_SECRET_KEY` vẫn bắt buộc cho việc ký form checkout. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
 
 Để chạy production, thay `SEPAY_ENV=production` và dùng đúng `SEPAY_MERCHANT_ID`, `SEPAY_SECRET_KEY`, `SEPAY_IPN_SECRET_KEY` của Production. Sandbox và Production dùng credential/endpoint riêng. Cần kiểm tra URL public, HTTPS và IPN trong dashboard SePay trước khi chuyển tiền thật.
 
@@ -179,4 +179,4 @@ Kiểm tra sau khi DNS/SSL đã hoạt động:
 curl -i https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
-Kết quả mong đợi là HTTP 200 với JSON có `service: "sepay-ipn"`, `accepts: "POST"` và `ready: true`. Chỉ dùng nút **Gửi thử** của SePay sau khi GET test thành công; IPN POST vẫn yêu cầu `X-Secret-Key` đúng secret đã cấu hình.
+Kết quả mong đợi là HTTP 200 với JSON có `service: "sepay-ipn"`, `accepts: "POST"` và `ready: true`. Chỉ dùng nút **Gửi thử** của SePay sau khi GET test thành công. Nếu SePay chưa bật xác thực `SECRET_KEY`, IPN POST không cần header; nếu đã bật, request phải có `X-Secret-Key` khớp Secret Key merchant.
