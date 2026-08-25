@@ -3,7 +3,13 @@
 const crypto = require('node:crypto');
 const {
   getVpnProvisionByOrderId,
+  getVpnSubscriptionGroupBySubscriptionId,
+  listVpnSubscriptionClients,
+  saveVpnSubscriptionGroup,
+  deleteVpnSubscriptionClient,
+  saveVpnSubscriptionClient,
   saveVpnProvision,
+  updateVpnProvision,
 } = require('./db');
 const { XuiError, randomSubId } = require('./xui');
 
@@ -95,16 +101,17 @@ async function findOrCreateClient(xui, client, inboundIds) {
   return { existing, identity };
 }
 
-async function syncProvision({ xui, config, context, existingProvision = null }) {
+async function syncProvision({ xui, config, context, existingProvision = null, existingGroup = null }) {
   if (!xui || !config) throw new XuiError('Chưa cấu hình kết nối 3x-ui trên backend.');
   const inboundIds = resolveInboundIds(config, context);
   if (!inboundIds.length) {
     throw new XuiError(`Chưa cấu hình inbound cho gói ${context.plan_slug}. Đặt XUI_INBOUND_IDS_BY_PLAN hoặc XUI_DEFAULT_INBOUND_IDS.`);
   }
 
-  const xuiEmail = existingProvision?.xui_email || makeXuiEmail(context);
-  const clientUuid = existingProvision?.client_uuid || crypto.randomUUID();
-  const subId = existingProvision?.sub_id || randomSubId();
+  const xuiEmail = makeXuiEmail(context);
+  const sameClientIdentity = existingProvision?.xui_email === xuiEmail;
+  const clientUuid = sameClientIdentity ? existingProvision.client_uuid : crypto.randomUUID();
+  const subId = existingGroup?.sub_id || existingProvision?.sub_id || randomSubId();
   const client = buildClient(context, { clientUuid, xuiEmail, subId }, config);
   const { existing } = await findOrCreateClient(xui, client, inboundIds);
   const currentInboundIds = Array.isArray(existing?.inboundIds) ? existing.inboundIds.map(Number).filter(Number.isInteger) : [];
@@ -113,55 +120,91 @@ async function syncProvision({ xui, config, context, existingProvision = null })
   await xui.attachClient(xuiEmail, toAttach);
   await xui.detachClient(xuiEmail, toDetach);
 
-  const provision = saveVpnProvision({
-    id: existingProvision?.id || crypto.randomUUID(),
-    userId: context.user_id,
-    orderId: context.order_id,
-    subscriptionId: context.subscription_id,
-    xuiEmail,
-    clientUuid,
-    subId,
-    inboundIds,
-    status: 'active',
-    lastError: null,
+  const provision = existingProvision
+    ? updateVpnProvision(existingProvision.id, { xuiEmail, clientUuid, subId, inboundIds, status: 'active', lastError: null })
+    : saveVpnProvision({
+      id: crypto.randomUUID(),
+      userId: context.user_id,
+      orderId: context.order_id,
+      subscriptionId: context.subscription_id,
+      xuiEmail,
+      clientUuid,
+      subId,
+      inboundIds,
+      status: 'active',
+      lastError: null,
+    });
+  const group = existingGroup || saveVpnSubscriptionGroup({
+    id: crypto.randomUUID(), userId: context.user_id, planId: context.plan_id,
+    subscriptionId: context.subscription_id, subId, status: 'active',
   });
-  return { provision, inboundIds, client };
+  if (existingProvision?.xui_email && existingProvision.xui_email !== xuiEmail) {
+    deleteVpnSubscriptionClient(group.id, existingProvision.xui_email);
+  }
+  const groupClient = saveVpnSubscriptionClient({ id: crypto.randomUUID(), groupId: group.id, xuiEmail, clientUuid });
+  return { provision, group, groupClient, inboundIds, client };
 }
 
-async function getSubscriptionPayload({ xui, config, provision }) {
-  if (!provision) return null;
-  const urls = xui.buildSubscriptionUrls(provision.sub_id);
-  let links = [];
-  let warning = null;
-  try {
-    links = await xui.getSubLinks(provision.sub_id);
-  } catch (error) {
-    warning = 'Không lấy được các link riêng từ 3x-ui; URL subscription vẫn được tạo theo cấu hình sub path.';
-  }
+function customVlessLinks({ xui, config, provision, clients = [] }) {
+  const profile = xui.getVlessProfile(provision.plan_slug, provision.plan_id);
+  if (!profile) throw new XuiError(`Chưa cấu hình VLESS profile cho gói ${provision.plan_slug || provision.plan_id}.`);
+  return clients.map((client) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark: client.remark || profile.remark }));
+}
+
+async function getSubscriptionPayload({ xui, config, group, provision }) {
+  const source = group || provision;
+  if (!source) return null;
+  const clients = group ? listVpnSubscriptionClients(group.id) : [{ client_uuid: provision.client_uuid, xui_email: provision.xui_email }];
+  const links = customVlessLinks({ xui, config, provision: source, clients });
+  const customSubscriptionUrl = xui.buildCustomSubscriptionUrl(source.sub_id);
+  if (!customSubscriptionUrl) throw new XuiError('Chưa cấu hình PUBLIC_API_URL cho custom subscription.');
+  const subscriptionUrl = customSubscriptionUrl;
   return {
-    subscriptionUrl: urls.subscriptionUrl,
-    jsonUrl: urls.jsonUrl,
-    clashUrl: urls.clashUrl,
-    qrDataUrl: await xui.qrDataUrl(urls.subscriptionUrl),
+    subscriptionUrl,
+    jsonUrl: null,
+    clashUrl: null,
+    vlessUrl: links[0],
+    qrDataUrl: await xui.qrDataUrl(subscriptionUrl),
     links,
-    warning,
-    client: {
-      uuid: provision.client_uuid,
-      inboundIds: JSON.parse(provision.inbound_ids_json || '[]'),
-      status: provision.status,
-      syncedAt: provision.updated_at,
-    },
+    warning: null,
+    clients: clients.map((item) => ({ uuid: item.client_uuid, email: item.xui_email })),
   };
+}
+
+function buildCustomSubscriptionText({ xui, config, group, provision }) {
+  const source = group || provision;
+  const clients = group ? listVpnSubscriptionClients(group.id) : [{ client_uuid: provision.client_uuid, xui_email: provision.xui_email }];
+  return `${customVlessLinks({ xui, config, provision: source, clients }).join('\n')}\n`;
+}
+
+async function addClientToGroup({ xui, config, group, inboundIds, clientEmail }) {
+  if (!group) throw new XuiError('Không tìm thấy subscription group.');
+  const email = String(clientEmail || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) throw new XuiError('Email client bổ sung không hợp lệ.');
+  const exists = await xui.getClient(email);
+  if (exists) throw new XuiError('Email client này đã tồn tại trên 3x-ui.');
+  const clientUuid = crypto.randomUUID();
+  const client = buildClient({
+    plan_slug: group.plan_slug, plan_id: group.plan_id, capacity: group.capacity,
+    device_limit: group.device_limit, expires_at: group.expires_at,
+  }, { clientUuid, xuiEmail: email, subId: group.sub_id }, config);
+  await xui.addClient({ client, inboundIds });
+  await xui.attachClient(email, inboundIds);
+  const groupClient = saveVpnSubscriptionClient({ id: crypto.randomUUID(), groupId: group.id, xuiEmail: email, clientUuid });
+  return { client, groupClient };
 }
 
 async function provisionOrder({ xui, config, context }) {
   const existing = getVpnProvisionByOrderId(context.order_id);
-  return syncProvision({ xui, config, context, existingProvision: existing });
+  const existingGroup = getVpnSubscriptionGroupBySubscriptionId(context.subscription_id);
+  return syncProvision({ xui, config, context, existingProvision: existing, existingGroup });
 }
 
 module.exports = {
   getVpnProvisionByOrderId,
   getSubscriptionPayload,
+  buildCustomSubscriptionText,
+  addClientToGroup,
   parseQuotaBytes,
   provisionOrder,
   resolveInboundIds,

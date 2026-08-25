@@ -102,6 +102,26 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_vpn_provisions_user_status ON vpn_provisions(user_id, status, updated_at);
+  CREATE TABLE IF NOT EXISTS vpn_subscription_groups (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id INTEGER NOT NULL REFERENCES plans(id),
+    subscription_id TEXT NOT NULL UNIQUE REFERENCES subscriptions(id) ON DELETE CASCADE,
+    sub_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','expired','error')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_vpn_groups_user_status ON vpn_subscription_groups(user_id, status, updated_at);
+  CREATE TABLE IF NOT EXISTS vpn_subscription_clients (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL REFERENCES vpn_subscription_groups(id) ON DELETE CASCADE,
+    xui_email TEXT NOT NULL UNIQUE,
+    client_uuid TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_vpn_group_clients_group ON vpn_subscription_clients(group_id, updated_at);
 `);
 
 const PLAN_SEEDS = [
@@ -109,6 +129,17 @@ const PLAN_SEEDS = [
 ];
 const seedPlan = db.prepare(`INSERT INTO plans (id, slug, category, name, name_en, price_vnd, capacity, speed, device_limit, is_lifetime, features_json, is_active) VALUES (@id, @slug, @category, @name, @nameEn, @price, @capacity, @speed, @devices, @lifetime, @features, 1) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, category = excluded.category, name = excluded.name, name_en = excluded.name_en, price_vnd = excluded.price_vnd, capacity = excluded.capacity, speed = excluded.speed, device_limit = excluded.device_limit, is_lifetime = excluded.is_lifetime, features_json = excluded.features_json, is_active = 1`);
 for (const plan of PLAN_SEEDS) seedPlan.run({ ...plan, features: JSON.stringify(plan.features) });
+// Backfill the group/client view from the original one-client provision table.
+db.exec(`
+  INSERT OR IGNORE INTO vpn_subscription_groups (id, user_id, plan_id, subscription_id, sub_id, status, created_at, updated_at)
+  SELECT 'legacy-' || v.id, v.user_id, s.plan_id, v.subscription_id, v.sub_id,
+         CASE WHEN v.status IN ('active', 'expired', 'error') THEN v.status ELSE 'error' END,
+         v.created_at, v.updated_at
+  FROM vpn_provisions v JOIN subscriptions s ON s.id = v.subscription_id;
+  INSERT OR IGNORE INTO vpn_subscription_clients (id, group_id, xui_email, client_uuid, created_at, updated_at)
+  SELECT 'legacy-client-' || v.id, 'legacy-' || v.id, v.xui_email, v.client_uuid, v.created_at, v.updated_at
+  FROM vpn_provisions v WHERE EXISTS (SELECT 1 FROM vpn_subscription_groups g WHERE g.id = 'legacy-' || v.id);
+`);
 // Keep historical orders/subscriptions queryable, but remove legacy plans from the storefront and new purchases.
 db.prepare("UPDATE plans SET is_active = CASE WHEN slug = 'vina-khong-nen' THEN 1 ELSE 0 END").run();
 
@@ -244,6 +275,7 @@ function markOrderPaid(orderId) {
     db.prepare("UPDATE orders SET status = 'paid', updated_at = datetime('now'), paid_at = datetime('now') WHERE id = ?").run(orderId);
     db.prepare("UPDATE subscriptions SET status = 'expired' WHERE user_id = ? AND status = 'active'").run(row.user_id);
     db.prepare("UPDATE vpn_provisions SET status = 'expired', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'").run(row.user_id);
+    db.prepare("UPDATE vpn_subscription_groups SET status = 'expired', updated_at = datetime('now') WHERE user_id = ? AND status = 'active'").run(row.user_id);
     db.prepare('INSERT INTO subscriptions (id, user_id, plan_id, order_id, status, started_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(subscriptionId, row.user_id, row.plan_id, orderId, 'active', now.toISOString(), expiresAt);
   })();
@@ -287,7 +319,7 @@ function getActiveVpnProvisionContext(userId) {
 function getVpnProvisionByUserId(userId) {
   return db.prepare(`
     SELECT v.*, s.status AS subscription_status, s.started_at, s.expires_at,
-           p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+           p.slug AS plan_slug, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
     FROM vpn_provisions v
     JOIN subscriptions s ON s.id = v.subscription_id
     JOIN plans p ON p.id = s.plan_id
@@ -295,6 +327,85 @@ function getVpnProvisionByUserId(userId) {
       AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
     ORDER BY datetime(v.updated_at) DESC LIMIT 1
   `).get(userId);
+}
+
+function getVpnProvisionBySubId(subId) {
+  return db.prepare(`
+    SELECT v.*, s.status AS subscription_status, s.started_at, s.expires_at,
+           p.slug AS plan_slug, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM vpn_provisions v
+    JOIN subscriptions s ON s.id = v.subscription_id
+    JOIN plans p ON p.id = s.plan_id
+    WHERE v.sub_id = ? AND v.status = 'active' AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+    LIMIT 1
+  `).get(subId);
+}
+
+function getVpnSubscriptionGroupByUserId(userId) {
+  return db.prepare(`
+    SELECT g.*, s.status AS subscription_status, s.started_at, s.expires_at,
+           p.slug AS plan_slug, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM vpn_subscription_groups g
+    JOIN subscriptions s ON s.id = g.subscription_id
+    JOIN plans p ON p.id = g.plan_id
+    WHERE g.user_id = ? AND g.status = 'active' AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+    ORDER BY datetime(g.updated_at) DESC LIMIT 1
+  `).get(userId);
+}
+
+function getVpnSubscriptionGroupBySubscriptionId(subscriptionId) {
+  return db.prepare(`
+    SELECT g.*, s.status AS subscription_status, s.started_at, s.expires_at,
+           p.slug AS plan_slug, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM vpn_subscription_groups g
+    JOIN subscriptions s ON s.id = g.subscription_id
+    JOIN plans p ON p.id = g.plan_id
+    WHERE g.subscription_id = ? LIMIT 1
+  `).get(subscriptionId);
+}
+
+function getVpnSubscriptionGroupBySubId(subId) {
+  return db.prepare(`
+    SELECT g.*, s.status AS subscription_status, s.started_at, s.expires_at,
+           p.slug AS plan_slug, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime
+    FROM vpn_subscription_groups g
+    JOIN subscriptions s ON s.id = g.subscription_id
+    JOIN plans p ON p.id = g.plan_id
+    WHERE g.sub_id = ? AND g.status = 'active' AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+    LIMIT 1
+  `).get(subId);
+}
+
+function listVpnSubscriptionClients(groupId) {
+  return db.prepare('SELECT * FROM vpn_subscription_clients WHERE group_id = ? ORDER BY datetime(created_at) ASC').all(groupId);
+}
+
+function saveVpnSubscriptionGroup({ id, userId, planId, subscriptionId, subId, status = 'active' }) {
+  db.prepare(`
+    INSERT INTO vpn_subscription_groups (id, user_id, plan_id, subscription_id, sub_id, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(subscription_id) DO UPDATE SET
+      user_id = excluded.user_id, plan_id = excluded.plan_id, sub_id = excluded.sub_id,
+      status = excluded.status, updated_at = datetime('now')
+  `).run(id, userId, planId, subscriptionId, subId, status);
+  return getVpnSubscriptionGroupBySubscriptionId(subscriptionId);
+}
+
+function deleteVpnSubscriptionClient(groupId, xuiEmail) {
+  db.prepare('DELETE FROM vpn_subscription_clients WHERE group_id = ? AND xui_email = ?').run(groupId, xuiEmail);
+}
+
+function saveVpnSubscriptionClient({ id, groupId, xuiEmail, clientUuid }) {
+  db.prepare(`
+    INSERT INTO vpn_subscription_clients (id, group_id, xui_email, client_uuid)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(xui_email) DO UPDATE SET
+      group_id = excluded.group_id, client_uuid = excluded.client_uuid, updated_at = datetime('now')
+  `).run(id, groupId, xuiEmail, clientUuid);
+  return db.prepare('SELECT * FROM vpn_subscription_clients WHERE xui_email = ?').get(xuiEmail);
 }
 
 function saveVpnProvision({ id, userId, orderId, subscriptionId, xuiEmail, clientUuid, subId, inboundIds, status = 'active', lastError = null }) {
@@ -320,6 +431,15 @@ function updateVpnProvisionStatus(orderId, status, lastError = null) {
   db.prepare("UPDATE vpn_provisions SET status = ?, last_error = ?, updated_at = datetime('now') WHERE order_id = ?")
     .run(status, lastError, orderId);
   return getVpnProvisionByOrderId(orderId);
+}
+
+function updateVpnProvision(id, { xuiEmail, clientUuid, subId, inboundIds, status = 'active', lastError = null }) {
+  db.prepare(`
+    UPDATE vpn_provisions
+    SET xui_email = ?, client_uuid = ?, sub_id = ?, inbound_ids_json = ?, status = ?, last_error = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(xuiEmail, clientUuid, subId, JSON.stringify(inboundIds), status, lastError, id);
+  return db.prepare('SELECT * FROM vpn_provisions WHERE id = ?').get(id);
 }
 
 function getActiveSubscription(userId) {
@@ -391,7 +511,7 @@ module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, getVpnProvisionContext, getActiveVpnProvisionContext,
-  getVpnProvisionByOrderId, getVpnProvisionByUserId, saveVpnProvision, updateVpnProvisionStatus,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,

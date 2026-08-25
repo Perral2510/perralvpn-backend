@@ -3,14 +3,14 @@ const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
   createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
-  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId,
+  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId,
   updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 const { XuiError, XuiClient, createXuiConfig } = require('./xui');
-const { getSubscriptionPayload, provisionOrder } = require('./xui-provision');
+const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, provisionOrder, resolveInboundIds } = require('./xui-provision');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -141,9 +141,23 @@ async function syncOrderToXui(orderId) {
 }
 
 async function publicVpnSubscription(userId) {
-  const provision = getVpnProvisionByUserId(userId);
-  return provision ? getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, provision }) : null;
+  const group = getVpnSubscriptionGroupByUserId(userId);
+  return group ? getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group }) : null;
 }
+
+app.get('/api/account/vpn/sub/:subId', (req, res) => {
+  const subId = String(req.params.subId || '').trim();
+  if (!/^[a-f0-9]{32,64}$/i.test(subId)) return res.status(404).type('text/plain').send('Not found');
+  const group = getVpnSubscriptionGroupBySubId(subId);
+  if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
+  try {
+    const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
+    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).type('text/plain').send(text);
+  } catch (error) {
+    console.error('Custom subscription build failed:', error.name || 'Error');
+    res.status(500).type('text/plain').send('Server error');
+  }
+});
 
 app.get('/api/account/vpn', requireAuth, async (req, res) => {
   try {
@@ -234,6 +248,23 @@ app.post('/api/admin/grant-plan', async (req, res) => {
   } catch (error) {
     console.error('Direct VPN grant failed:', error.name || 'Error');
     return res.status(502).json({ ok: false, message: 'Đã tạo subscription nhưng chưa provision được client 3x-ui.', data: { order: paidOrder, vpnSync: 'error' } });
+  }
+});
+
+app.post('/api/admin/vpn-subscriptions/:subId/clients', async (req, res) => {
+  const adminKey = process.env.ADMIN_API_KEY;
+  if (!adminKey) return res.status(503).json({ ok: false, message: 'Chưa cấu hình khóa quản trị thanh toán.' });
+  if (req.get('x-admin-key') !== adminKey) return res.status(401).json({ ok: false, message: 'Không có quyền thêm client.' });
+  const group = getVpnSubscriptionGroupBySubId(String(req.params.subId || '').trim());
+  if (!group) return res.status(404).json({ ok: false, message: 'Không tìm thấy subscription group đang hoạt động.' });
+  try {
+    const inboundIds = resolveInboundIds(xuiConfig, group);
+    const added = await addClientToGroup({ xui: xuiClient, config: xuiConfig, group, inboundIds, clientEmail: req.body.email });
+    const vpn = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group });
+    res.status(201).json({ ok: true, message: 'Đã thêm client vào subscription group.', data: { client: added.client, vpn } });
+  } catch (error) {
+    console.error('Additional VPN client provisioning failed:', error.name || 'Error');
+    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Lỗi server' });
   }
 });
 

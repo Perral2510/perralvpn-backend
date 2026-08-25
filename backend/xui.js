@@ -44,6 +44,8 @@ function createXuiConfig(env = process.env) {
     panelBaseUrl,
     apiToken,
     subscriptionBaseUrl,
+    publicApiBaseUrl: cleanBaseUrl(env.PUBLIC_API_URL || env.APP_PUBLIC_URL),
+    vlessProfiles: parseJsonEnv(env.XUI_VLESS_PROFILES, {}),
     subscriptionPath: cleanPath(env.XUI_SUB_PATH, '/sub/'),
     jsonPath: cleanPath(env.XUI_JSON_PATH, '/json/'),
     clashPath: cleanPath(env.XUI_CLASH_PATH, '/clash/'),
@@ -143,6 +145,31 @@ class XuiClient {
       jsonUrl: `${this.config.subscriptionBaseUrl}${this.config.jsonPath}${encoded}`,
       clashUrl: `${this.config.subscriptionBaseUrl}${this.config.clashPath}${encoded}`,
     };
+  }
+
+  getVlessProfile(planSlug, planId) {
+    const profiles = this.config.vlessProfiles || {};
+    return profiles[planSlug] || profiles[String(planId)] || null;
+  }
+
+  buildCustomSubscriptionUrl(subId) {
+    if (!this.config.publicApiBaseUrl) return null;
+    return `${this.config.publicApiBaseUrl}/api/account/vpn/sub/${encodeURIComponent(subId)}`;
+  }
+
+  buildVlessUrl(uuid, profile = {}) {
+    const address = String(profile.address || '').trim();
+    const port = Number(profile.port || 443);
+    if (!address || !Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new XuiError('VLESS profile thiếu address hoặc port hợp lệ.');
+    }
+    const params = new URLSearchParams();
+    for (const key of ['path', 'security', 'encryption', 'host', 'fp', 'type', 'sni', 'flow']) {
+      if (profile[key] !== undefined && profile[key] !== null && String(profile[key]) !== '') params.set(key, String(profile[key]));
+    }
+    const query = params.toString();
+    const remark = String(profile.remark || 'PerralVPN').trim();
+    return `vless://${encodeURIComponent(uuid)}@${address}:${port}${query ? `?${query}` : ''}#${encodeURIComponent(remark)}`;
   }
 
   async qrDataUrl(url) {
