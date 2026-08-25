@@ -8,7 +8,9 @@ services:
     volumes:
       - perralvpn-data:/app/data
     ports:
+      # Both listeners stay local; public HTTPS is handled by the proxy/tunnel.
       - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
 
 volumes:
   perralvpn-data:

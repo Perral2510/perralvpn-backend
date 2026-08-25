@@ -288,6 +288,10 @@ function sepayIpnPayload(req) {
   }
 }
 
+app.get('/api/webhooks/sepay/ipn', (_req, res) => {
+  res.json({ ok: true, service: 'sepay-ipn', accepts: 'POST', ready: true });
+});
+
 app.post('/api/webhooks/sepay/ipn', (req, res) => {
   const expectedSecret = getSepayIpnSecret();
   const providedSecret = String(req.get('X-Secret-Key') || '').trim();

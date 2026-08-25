@@ -6,4 +6,6 @@ credentials-file: /etc/cloudflared/TUNNEL_ID.json
 ingress:
   - hostname: api.perral.dpdns.org
     service: http://127.0.0.1:3000
+  - hostname: payhook.perral.de5.net
+    service: http://127.0.0.1:3001
   - service: http_status:404
