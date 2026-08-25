@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const {
   getVpnProvisionByOrderId,
+  getVpnProvisionByUserId,
   getVpnSubscriptionGroupBySubscriptionId,
   listVpnSubscriptionClients,
   saveVpnSubscriptionGroup,
@@ -10,6 +11,7 @@ const {
   saveVpnSubscriptionClient,
   saveVpnProvision,
   updateVpnProvision,
+  rotateVpnSubscriptionCredentials,
 } = require('./db');
 const { XuiError, randomSubId } = require('./xui');
 
@@ -47,6 +49,25 @@ function makeXuiEmail(context) {
   if (accountEmail && accountEmail.length <= 100) return accountEmail;
   const userPart = String(context.user_id_code || context.user_id).replace(/[^a-zA-Z0-9_-]/g, '-');
   return `perral-${userPart}`.slice(0, 100);
+}
+
+function cleanDisplayLabel(value, fallback = 'VPN') {
+  const label = String(value || '').replace(/[^\p{L}\p{N}._ -]/gu, '').replace(/\s+/g, ' ').trim();
+  return (label || fallback).slice(0, 80);
+}
+
+function publicWebHost(config) {
+  const origin = String(config?.publicWebOrigin || '').trim();
+  return (origin.replace(/^https?:\/\//i, '').split('/')[0] || 'perral.dpdns.org').toLowerCase();
+}
+
+function getSubscriptionName({ group, config }) {
+  const planLabel = cleanDisplayLabel(group?.plan_name || group?.plan_slug, 'VPN');
+  return `${planLabel} - ${publicWebHost(config)}`;
+}
+
+function getVlessRemark(context) {
+  return `VPN-${cleanDisplayLabel(context?.plan_name || context?.plan_slug, 'VPN')}`;
 }
 
 function expiryTimestamp(context) {
@@ -165,6 +186,7 @@ async function getSubscriptionPayload({ xui, config, group, provision }) {
   if (!customSubscriptionUrl) throw new XuiError('Chưa cấu hình PUBLIC_API_URL cho custom subscription.');
   const subscriptionUrl = customSubscriptionUrl;
   return {
+    subscriptionName: getSubscriptionName({ group: source, config }),
     subscriptionUrl,
     jsonUrl: null,
     clashUrl: null,
@@ -191,12 +213,70 @@ async function addClientToGroup({ xui, config, group, inboundIds, clientEmail })
   const clientUuid = crypto.randomUUID();
   const client = buildClient({
     plan_slug: group.plan_slug, plan_id: group.plan_id, capacity: group.capacity,
-    device_limit: group.device_limit, expires_at: group.expires_at,
+    device_limit: group.device_limit, expires_at: group.expires_at, plan_name: group.plan_name,
   }, { clientUuid, xuiEmail: email, subId: group.sub_id }, config);
   await xui.addClient({ client, inboundIds });
   await xui.attachClient(email, inboundIds);
   const groupClient = saveVpnSubscriptionClient({ id: crypto.randomUUID(), groupId: group.id, xuiEmail: email, clientUuid });
   return { client, groupClient };
+}
+
+async function rotateSubscriptionCredentials({ xui, config, group }) {
+  if (!xui || !config) throw new XuiError('Chưa cấu hình kết nối 3x-ui trên backend.');
+  if (!group) throw new XuiError('Không tìm thấy subscription group đang hoạt động.');
+  const storedClients = listVpnSubscriptionClients(group.id);
+  if (!storedClients.length) throw new XuiError('Subscription chưa có client để reset.');
+
+  const primaryProvision = getVpnProvisionByUserId(group.user_id);
+  const baseContext = {
+    plan_slug: group.plan_slug,
+    plan_name: group.plan_name,
+    plan_id: group.plan_id,
+    capacity: group.capacity,
+    device_limit: group.device_limit,
+    expires_at: group.expires_at,
+  };
+  const newSubId = randomSubId();
+  const updated = [];
+  const contextFor = (email, orderId = '') => ({ ...baseContext, email, order_id: orderId });
+  const rollback = async () => {
+    await Promise.allSettled(updated.map(({ xuiEmail, oldUuid, oldSubId }) => {
+      const oldClient = buildClient(contextFor(xuiEmail), { clientUuid: oldUuid, xuiEmail, subId: oldSubId }, config);
+      return xui.updateClient(xuiEmail, oldClient);
+    }));
+  };
+
+  try {
+    for (const stored of storedClients) {
+      const existing = await xui.getClient(stored.xui_email);
+      const identity = existing?.client || existing;
+      if (!identity || identity.id !== stored.client_uuid) {
+        throw new XuiError(`Không thể xác minh client 3x-ui của ${stored.xui_email}; dừng reset để tránh mất kết nối.`);
+      }
+      const nextUuid = crypto.randomUUID();
+      const oldSubId = String(identity.subId || group.sub_id);
+      const nextClient = buildClient(contextFor(stored.xui_email), {
+        clientUuid: nextUuid,
+        xuiEmail: stored.xui_email,
+        subId: newSubId,
+      }, config);
+      await xui.updateClient(stored.xui_email, nextClient);
+      updated.push({ xuiEmail: stored.xui_email, oldUuid: stored.client_uuid, oldSubId, clientUuid: nextUuid });
+    }
+
+    const primary = updated.find((item) => item.xuiEmail === primaryProvision?.xui_email) || updated[0];
+    const rotatedGroup = rotateVpnSubscriptionCredentials({
+      groupId: group.id,
+      subscriptionId: group.subscription_id,
+      subId: newSubId,
+      clients: updated,
+      primaryClient: primary,
+    });
+    return { group: rotatedGroup, oldSubId: group.sub_id, newSubId };
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
 }
 
 async function provisionOrder({ xui, config, context }) {
@@ -209,6 +289,8 @@ module.exports = {
   getVpnProvisionByOrderId,
   getSubscriptionPayload,
   buildCustomSubscriptionText,
+  getSubscriptionName,
+  rotateSubscriptionCredentials,
   addClientToGroup,
   parseQuotaBytes,
   provisionOrder,

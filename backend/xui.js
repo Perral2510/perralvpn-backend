@@ -38,12 +38,15 @@ function createXuiConfig(env = process.env) {
   const panelBaseUrl = cleanBaseUrl(env.XUI_BASE_URL);
   const apiToken = String(env.XUI_API_TOKEN || '').trim();
   if (!panelBaseUrl || !apiToken) return null;
-
   const subscriptionBaseUrl = cleanBaseUrl(env.XUI_SUB_BASE_URL || panelBaseUrl);
+  const frontendOrigins = String(env.FRONTEND_ORIGINS || env.FRONTEND_ORIGIN || '')
+    .split(',').map((origin) => origin.trim()).filter(Boolean);
+  const publicWebOrigin = cleanBaseUrl(env.PUBLIC_FRONTEND_URL || env.FRONTEND_ORIGIN || frontendOrigins[0]);
   return {
     panelBaseUrl,
     apiToken,
     subscriptionBaseUrl,
+    publicWebOrigin,
     publicApiBaseUrl: cleanBaseUrl(env.PUBLIC_API_URL || env.APP_PUBLIC_URL),
     vlessProfiles: parseJsonEnv(env.XUI_VLESS_PROFILES, {}),
     subscriptionPath: cleanPath(env.XUI_SUB_PATH, '/sub/'),

@@ -452,6 +452,21 @@ function rotateVpnSubscriptionGroupSubId(groupId, subId) {
   return db.prepare('SELECT * FROM vpn_subscription_groups WHERE id = ?').get(groupId);
 }
 
+function rotateVpnSubscriptionCredentials({ groupId, subscriptionId, subId, clients = [], primaryClient = null }) {
+  const transaction = db.transaction(() => {
+    db.prepare("UPDATE vpn_subscription_groups SET sub_id = ?, updated_at = datetime('now') WHERE id = ? AND status = 'active'")
+      .run(subId, groupId);
+    if (primaryClient) {
+      db.prepare("UPDATE vpn_provisions SET client_uuid = ?, sub_id = ?, updated_at = datetime('now') WHERE subscription_id = ? AND status = 'active'")
+        .run(primaryClient.clientUuid, subId, subscriptionId);
+    }
+    const updateClient = db.prepare("UPDATE vpn_subscription_clients SET client_uuid = ?, updated_at = datetime('now') WHERE group_id = ? AND xui_email = ?");
+    for (const client of clients) updateClient.run(client.clientUuid, groupId, client.xuiEmail);
+  });
+  transaction();
+  return getVpnSubscriptionGroupBySubscriptionId(subscriptionId);
+}
+
 function listVpnSubscriptionClients(groupId) {
   return db.prepare('SELECT * FROM vpn_subscription_clients WHERE group_id = ? ORDER BY datetime(created_at) ASC').all(groupId);
 }
@@ -584,7 +599,7 @@ module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderById, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
-  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnSubscriptionCredentials, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,

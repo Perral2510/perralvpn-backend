@@ -6,14 +6,14 @@ const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
   createOrder, getOrderById, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid,
   insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getActiveSubscription,
-  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients,
+  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients,
   updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
-const { XuiError, XuiClient, createXuiConfig, randomSubId } = require('./xui');
-const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds } = require('./xui-provision');
+const { XuiError, XuiClient, createXuiConfig } = require('./xui');
+const { getSubscriptionPayload, buildCustomSubscriptionText, getSubscriptionName, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionCredentials } = require('./xui-provision');
 const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
 
 const app = express();
@@ -207,7 +207,14 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
   if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
   try {
     const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
-    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).type('text/plain').send(text);
+    const subscriptionName = getSubscriptionName({ group, config: xuiConfig });
+    const filename = encodeURIComponent(`${subscriptionName}.txt`);
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+      'Content-Disposition': `inline; filename*=UTF-8''${filename}`,
+      'X-Subscription-Name': subscriptionName,
+    }).type('text/plain').send(text);
   } catch (error) {
     console.error('Custom subscription build failed:', error.name || 'Error');
     res.status(500).type('text/plain').send('Server error');
@@ -228,14 +235,12 @@ app.post('/api/account/vpn/reset-link', requireAuth, async (req, res) => {
   try {
     const group = getVpnSubscriptionGroupByUserId(req.user.id);
     if (!group) return res.status(404).json({ ok: false, message: 'Chưa có gói VPN đang hoạt động.' });
-    const newSubId = randomSubId();
-    rotateVpnSubscriptionGroupSubId(group.id, newSubId);
-    const rotatedGroup = getVpnSubscriptionGroupBySubId(newSubId);
-    const data = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group: rotatedGroup });
-    res.json({ ok: true, message: 'Đã reset subscription URL và QR.', data });
+    const rotated = await rotateSubscriptionCredentials({ xui: xuiClient, config: xuiConfig, group });
+    const data = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group: rotated.group });
+    res.json({ ok: true, message: 'Đã reset link, QR và khóa các thông tin kết nối cũ.', data });
   } catch (error) {
     console.error('VPN subscription reset failed:', error.name || 'Error');
-    res.status(503).json({ ok: false, message: 'Lỗi server' });
+    res.status(503).json({ ok: false, message: error instanceof XuiError ? error.message : 'Lỗi server' });
   }
 });
 
