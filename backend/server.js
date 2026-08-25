@@ -157,6 +157,8 @@ async function publicVpnManagement(userId) {
       uuid: item.client_uuid,
       enabled: client.enable !== false,
       machinesUsed: result.hwids.length,
+      uploadBytes: result.traffic.upload,
+      downloadBytes: result.traffic.download,
       trafficUsedBytes: result.traffic.total,
     };
   }));
@@ -165,6 +167,8 @@ async function publicVpnManagement(userId) {
     plan: { slug: group.plan_slug, name: group.plan_name, capacity: group.capacity, deviceLimit: group.device_limit, lifetime: Boolean(group.is_lifetime) },
     machinesUsed: usage.reduce((sum, item) => sum + item.machinesUsed, 0),
     machinesMax: Number(group.device_limit || 0),
+    uploadBytes: usage.reduce((sum, item) => sum + Number(item.uploadBytes || 0), 0),
+    downloadBytes: usage.reduce((sum, item) => sum + Number(item.downloadBytes || 0), 0),
     dataUsedBytes: usage.reduce((sum, item) => sum + item.trafficUsedBytes, 0),
     dataMaxBytes: parseQuotaBytes(group.capacity),
     clients: usage,
