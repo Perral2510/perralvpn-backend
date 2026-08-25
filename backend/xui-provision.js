@@ -188,19 +188,23 @@ async function getSubscriptionPayload({ xui, config, group, provision }) {
   const source = group || provision;
   if (!source) return null;
   const clients = group ? listVpnSubscriptionClients(group.id) : [{ client_uuid: provision.client_uuid, xui_email: provision.xui_email }];
-  const links = customVlessLinks({ xui, config, provision: source, clients });
-  const customSubscriptionUrl = xui.buildCustomSubscriptionUrl(source.sub_id);
-  if (!customSubscriptionUrl) throw new XuiError('Chưa cấu hình PUBLIC_API_URL cho custom subscription.');
-  const subscriptionUrl = customSubscriptionUrl;
+  const urls = xui.buildSubscriptionUrls(source.sub_id);
+  let links = [];
+  let warning = null;
+  try {
+    links = await xui.getSubLinks(source.sub_id);
+  } catch (error) {
+    warning = 'Không lấy được link VLESS riêng từ 3x-ui; URL subscription vẫn được tạo theo cấu hình sub path.';
+  }
   return {
     subscriptionName: getSubscriptionName({ group: source, config }),
-    subscriptionUrl,
-    jsonUrl: null,
-    clashUrl: null,
-    vlessUrl: links[0],
-    qrDataUrl: await xui.qrDataUrl(subscriptionUrl),
+    subscriptionUrl: urls.subscriptionUrl,
+    jsonUrl: urls.jsonUrl,
+    clashUrl: urls.clashUrl,
+    vlessUrl: links[0] || null,
+    qrDataUrl: await xui.qrDataUrl(urls.subscriptionUrl),
     links,
-    warning: null,
+    warning,
     clients: clients.map((item) => ({ uuid: item.client_uuid, email: item.xui_email })),
   };
 }
