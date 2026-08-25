@@ -264,24 +264,42 @@ app.post('/api/account/vpn/sync', requireAuth, async (req, res) => {
   }
 });
 
-app.post('/api/account/orders', requireAuth, (req, res) => {
+function buildPendingOrder(req) {
   const planId = Number(req.body.planId);
   const plan = getPlanById(planId);
   const requestedMonths = Number(req.body.cycleMonths || 1);
   const cycleMonths = plan?.is_lifetime ? 1 : requestedMonths;
   const paymentMethod = safeText(req.body.paymentMethod, 20).toLowerCase();
   const promoCode = safeText(req.body.promoCode, 40).toUpperCase();
-  if (!plan) return res.status(400).json({ ok: false, message: 'Gói cước không tồn tại hoặc đã ngừng bán.' });
-  if (!CYCLE_MONTHS.has(cycleMonths)) return res.status(400).json({ ok: false, message: 'Chu kỳ thanh toán không hợp lệ.' });
-  if (!PAYMENT_METHODS.has(paymentMethod)) return res.status(400).json({ ok: false, message: 'Phương thức thanh toán này chưa được tích hợp.' });
+  if (!plan) return { error: 'Gói cước không tồn tại hoặc đã ngừng bán.' };
+  if (!CYCLE_MONTHS.has(cycleMonths)) return { error: 'Chu kỳ thanh toán không hợp lệ.' };
+  if (!PAYMENT_METHODS.has(paymentMethod)) return { error: 'Phương thức thanh toán này chưa được tích hợp.' };
   const subtotal = plan.price_vnd * cycleMonths;
   const cycleDiscountRate = { 1: 0, 3: 0.05, 6: 0.07, 12: 0.10 }[cycleMonths] ?? 0;
   const cycleDiscount = Math.round(subtotal * cycleDiscountRate);
   const promoDiscount = promoCode.startsWith('DAV') ? Math.round((subtotal - cycleDiscount) * 0.1) : 0;
   const discount = cycleDiscount + promoDiscount;
   const total = Math.max(0, subtotal - discount);
-  const order = createOrder({ userId: req.user.id, planId, cycleMonths, subtotal, discount, total, paymentMethod });
-  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới cổng thanh toán SePay.', data: { order } });
+  return { order: createOrder({ userId: req.user.id, planId, cycleMonths, subtotal, discount, total, paymentMethod }) };
+}
+
+app.post('/api/account/orders', requireAuth, (req, res) => {
+  const result = buildPendingOrder(req);
+  if (result.error) return res.status(400).json({ ok: false, message: result.error });
+  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới cổng thanh toán SePay.', data: result });
+});
+
+app.post('/api/account/orders/checkout', requireAuth, (req, res) => {
+  const result = buildPendingOrder(req);
+  if (result.error) return res.status(400).json({ ok: false, message: result.error });
+  try {
+    const checkout = getSepayCheckout(result.order, req.user);
+    if (!checkout) return res.status(503).json({ ok: false, message: 'Cổng thanh toán SePay chưa được cấu hình trên máy chủ.' });
+    return res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới cổng thanh toán SePay.', data: { order: result.order, checkout } });
+  } catch (error) {
+    console.error('SePay combined checkout initialization failed:', error.name || 'Error');
+    return res.status(502).json({ ok: false, message: 'Không thể khởi tạo cổng thanh toán lúc này.' });
+  }
 });
 
 app.post('/api/account/orders/:id/checkout', requireAuth, (req, res) => {
