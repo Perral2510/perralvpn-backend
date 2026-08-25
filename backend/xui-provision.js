@@ -87,7 +87,7 @@ function buildClient(context, { clientUuid, xuiEmail, subId }, config) {
     reset: /\/tháng|\/month|monthly/i.test(String(context.capacity || '')) ? 30 : 0,
     enable: true,
     subId,
-    comment: `${getVlessRemark(context)} | ${publicWebHost(config)}${context.order_id ? ` | ${context.order_id}` : ''}`,
+    comment: `PerralVPN | ${getVlessRemark(context)} | ${publicWebHost(config)}${context.order_id ? ` | ${context.order_id}` : ''}`,
   };
 }
 
@@ -95,7 +95,18 @@ function existingClientIdentity(existing) {
   return existing?.client || existing;
 }
 
-async function findOrCreateClient(xui, client, inboundIds) {
+function isOwnedPerralClient(identity, client, context, config) {
+  const comment = String(identity?.comment || identity?.remark || identity?.note || '').trim();
+  const identitySubId = String(identity?.subId || identity?.sub_id || '').trim();
+  const clientSubId = String(client?.subId || '').trim();
+  const newFormatPrefix = `${getVlessRemark(context)} | ${publicWebHost(config)}`;
+  return identity?.id === client.id
+    || (identitySubId && clientSubId && identitySubId === clientSubId)
+    || comment.startsWith('PerralVPN ')
+    || comment.startsWith(newFormatPrefix);
+}
+
+async function findOrCreateClient(xui, client, inboundIds, context, config) {
   let existing = await xui.getClient(client.email);
   const existedBeforeCreate = Boolean(existing);
   if (!existing) {
@@ -113,7 +124,7 @@ async function findOrCreateClient(xui, client, inboundIds) {
   const identity = existingClientIdentity(existing);
   if (!identity) throw new XuiError('3x-ui trả về client rỗng sau khi tạo.');
   if (existedBeforeCreate) {
-    const ownedByPerral = identity.id === client.id || String(identity.comment || '').startsWith('PerralVPN ');
+    const ownedByPerral = isOwnedPerralClient(identity, client, context, config);
     if (!ownedByPerral) {
       throw new XuiError('Email client 3x-ui đã tồn tại nhưng không thuộc PerralVPN; dừng để tránh ghi đè client khác.');
     }
@@ -134,7 +145,7 @@ async function syncProvision({ xui, config, context, existingProvision = null, e
   const clientUuid = sameClientIdentity ? existingProvision.client_uuid : crypto.randomUUID();
   const subId = existingGroup?.sub_id || existingProvision?.sub_id || randomSubId();
   const client = buildClient(context, { clientUuid, xuiEmail, subId }, config);
-  const { existing } = await findOrCreateClient(xui, client, inboundIds);
+  const { existing } = await findOrCreateClient(xui, client, inboundIds, context, config);
   const currentInboundIds = Array.isArray(existing?.inboundIds) ? existing.inboundIds.map(Number).filter(Number.isInteger) : [];
   const toAttach = inboundIds.filter((id) => !currentInboundIds.includes(id));
   const toDetach = currentInboundIds.filter((id) => !inboundIds.includes(id));
@@ -286,6 +297,7 @@ module.exports = {
   getSubscriptionPayload,
   buildCustomSubscriptionText,
   getSubscriptionName,
+  isOwnedPerralClient,
   rotateSubscriptionCredentials,
   addClientToGroup,
   parseQuotaBytes,
