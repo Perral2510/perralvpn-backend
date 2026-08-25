@@ -106,11 +106,11 @@ class XuiClient {
   async getClientTraffic(email) {
     const payload = await this.request(`/panel/api/clients/traffic/${encodeURIComponent(email)}`);
     const value = payload.obj || payload.data || {};
-    return {
-      upload: Number(value.up ?? value.upload ?? 0) || 0,
-      download: Number(value.down ?? value.download ?? 0) || 0,
-      total: Number(value.total ?? ((Number(value.up ?? value.upload ?? 0) || 0) + (Number(value.down ?? value.download ?? 0) || 0))) || 0,
-    };
+    const upload = Number(value.up ?? value.upload ?? 0) || 0;
+    const download = Number(value.down ?? value.download ?? 0) || 0;
+    // 3x-ui's `total` field is the client's quota, not consumed traffic.
+    // Usage must always be calculated from upload + download.
+    return { upload, download, total: upload + download };
   }
 
   async getClientHwids(email) {
