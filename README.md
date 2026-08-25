@@ -149,34 +149,34 @@ FRONTEND_ORIGIN=https://app.perral.dpdns.org
 Trong dashboard SePay, cấu hình IPN URL trỏ tới:
 
 ```text
-https://api.perral.dpdns.org/api/webhooks/sepay/ipn
+https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
 IPN endpoint dùng header `X-Secret-Key`, lưu trong `SEPAY_IPN_SECRET_KEY`. Khi nhận `ORDER_PAID` với `CAPTURED`, `APPROVED`, `PAYMENT`, tiền tệ VND và số tiền khớp đơn, backend lưu giao dịch vào bảng `sepay_transactions`, chuyển đơn sang `paid` và chạy provision VPN bất đồng bộ. Giao dịch trùng được acknowledge nhưng không duyệt lại.
 
 Để chạy production, thay `SEPAY_ENV=production` và dùng đúng `SEPAY_MERCHANT_ID`, `SEPAY_SECRET_KEY`, `SEPAY_IPN_SECRET_KEY` của Production. Sandbox và Production dùng credential/endpoint riêng. Cần kiểm tra URL public, HTTPS và IPN trong dashboard SePay trước khi chuyển tiền thật.
 
-## Subdomain nhận IPN SePay
+## IPN SePay trên port HTTPS 3001
 
-Hostname đề xuất cho IPN là `payhook.perral.de5.net`. Backend đã có endpoint:
+IPN dùng domain hiện có `perral.de5.net` và port HTTPS riêng `3001`; không dùng port 80/443. Backend đã có endpoint:
 
 ```text
 GET  /api/webhooks/sepay/ipn   # kiểm tra endpoint
 POST /api/webhooks/sepay/ipn   # nhận IPN từ SePay
 ```
 
-URL IPN production cần nhập trong Dashboard SePay:
+URL IPN cần nhập trong Dashboard SePay:
 
 ```text
-https://payhook.perral.de5.net/api/webhooks/sepay/ipn
+https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
-Backend có listener riêng trên host port `3001` (container port `3000`), nhưng chỉ bind vào `127.0.0.1`; Node không chiếm port 80/443. Nếu VPS đang dùng Cloudflare Tunnel, thêm Public Hostname `payhook.perral.de5.net` trỏ tới `http://127.0.0.1:3001`. File `deploy/cloudflared-config.yml` đã có route mẫu tương ứng. Khi đó SePay vẫn gọi URL HTTPS chuẩn `https://payhook.perral.de5.net/api/webhooks/sepay/ipn`, còn tunnel chuyển nội bộ vào port 3001. Nếu không dùng Tunnel, cần một reverse proxy/TLS gateway trên 443 chuyển tiếp vào `127.0.0.1:3001`; không nên mở trực tiếp port 3001 cho Internet vì SePay yêu cầu IPN URL HTTPS công khai. Không dùng URL `http://`, localhost hoặc IP nội bộ.
+Backend chạy HTTPS trực tiếp trên host port `3001` (container port `3001`) và không chiếm port 80/443. Chứng chỉ phải hợp lệ cho `perral.de5.net`, với key/certificate được mount vào `/etc/sepay/tls` trong container. Port 3001 phải được cho phép qua firewall/security group của VPS. Không dùng URL `http://`, không bỏ `:3001`, và không dùng certificate self-signed.
 
 Kiểm tra sau khi DNS/SSL đã hoạt động:
 
 ```bash
-curl -i https://payhook.perral.de5.net/api/webhooks/sepay/ipn
+curl -i https://perral.de5.net:3001/api/webhooks/sepay/ipn
 ```
 
 Kết quả mong đợi là HTTP 200 với JSON có `service: "sepay-ipn"`, `accepts: "POST"` và `ready: true`. Chỉ dùng nút **Gửi thử** của SePay sau khi GET test thành công; IPN POST vẫn yêu cầu `X-Secret-Key` đúng secret đã cấu hình.

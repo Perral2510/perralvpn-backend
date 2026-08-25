@@ -1,4 +1,6 @@
 const express = require('express');
+const https = require('node:https');
+const fs = require('node:fs');
 const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
@@ -562,4 +564,16 @@ app.use((req, res) => {
   res.status(404).json({ ok: false, message: 'API route not found.' });
 });
 
-app.listen(port, '0.0.0.0', () => console.log(`PerralVPN API listening on :${port}`));
+const httpServer = app.listen(port, '0.0.0.0', () => console.log(`PerralVPN API listening on :${port}`));
+
+const httpsPort = Number(process.env.SEPAY_HTTPS_PORT || 3001);
+const tlsKeyPath = String(process.env.SEPAY_TLS_KEY_PATH || '').trim();
+const tlsCertPath = String(process.env.SEPAY_TLS_CERT_PATH || '').trim();
+if (tlsKeyPath && tlsCertPath && fs.existsSync(tlsKeyPath) && fs.existsSync(tlsCertPath)) {
+  https.createServer({ key: fs.readFileSync(tlsKeyPath), cert: fs.readFileSync(tlsCertPath) }, app)
+    .listen(httpsPort, '0.0.0.0', () => console.log(`PerralVPN SePay HTTPS listener on :${httpsPort}`));
+} else {
+  console.warn('SePay HTTPS listener is disabled: configure SEPAY_TLS_KEY_PATH and SEPAY_TLS_CERT_PATH.');
+}
+
+module.exports = httpServer;

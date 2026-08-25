@@ -7,10 +7,12 @@ services:
       - .env
     volumes:
       - perralvpn-data:/app/data
+      # Put a certificate for payhook.perral.de5.net in this host directory.
+      - /etc/sepay/tls:/etc/sepay/tls:ro
     ports:
-      # Both listeners stay local; public HTTPS is handled by the proxy/tunnel.
+      # Existing API stays private; SePay IPN is HTTPS directly on public port 3001.
       - "127.0.0.1:3000:3000"
-      - "127.0.0.1:3001:3000"
+      - "0.0.0.0:3001:3001"
 
 volumes:
   perralvpn-data:
