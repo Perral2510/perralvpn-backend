@@ -264,8 +264,9 @@ app.post('/api/account/vpn/sync', requireAuth, async (req, res) => {
   } catch (error) {
     const existing = getVpnProvisionByOrderId(context.order_id);
     if (existing) updateVpnProvisionStatus(context.order_id, 'error', '3x-ui synchronization failed');
-    console.error('VPN synchronization failed:', error.name || 'Error');
-    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Lỗi server' });
+    console.error('VPN synchronization failed:', error.name || 'Error', error instanceof XuiError ? `(${error.message})` : '');
+    const message = error instanceof XuiError ? error.message : 'Không thể đồng bộ subscription lúc này.';
+    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message });
   }
 });
 
