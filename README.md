@@ -133,7 +133,7 @@ Không đặt `x-admin-key` trong frontend hoặc gửi nó qua chat. Response t
 
 ## Hosted checkout SePay
 
-Backend hỗ trợ luồng checkout hosted của SePay. Người dùng tạo đơn trên frontend, frontend gọi `POST /api/account/orders/:id/checkout`, backend tạo các field đã ký bằng merchant secret rồi frontend submit form sang cổng SePay. Merchant secret không bao giờ được gửi vào frontend.
+Backend hỗ trợ luồng checkout hosted của SePay. Frontend gọi `POST /api/account/orders/checkout` để backend tính giá server-side, tạo đơn pending và trả các field đã ký bằng merchant secret trong cùng một request; frontend submit form sang cổng SePay. Endpoint cũ `POST /api/account/orders/:id/checkout` vẫn được giữ để tương thích. Merchant secret không bao giờ được gửi vào frontend.
 
 Cấu hình trong `.env`:
 
