@@ -20,7 +20,12 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookie = process.env.SESSION_COOKIE_NAME || 'perral_session';
-const allowedOrigin = process.env.FRONTEND_ORIGIN || '';
+const allowedOrigins = new Set(
+  String(process.env.FRONTEND_ORIGINS || process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map(origin => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+);
 const attempts = new Map();
 const xuiConfig = createXuiConfig();
 const xuiClient = xuiConfig ? new XuiClient(xuiConfig) : null;
@@ -35,8 +40,9 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  if (allowedOrigin && req.headers.origin === allowedOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  const requestOrigin = String(req.headers.origin || '').trim().replace(/\/$/, '');
+  if (requestOrigin && allowedOrigins.has(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
   }
