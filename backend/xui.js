@@ -29,7 +29,11 @@ function parseJsonEnv(value, fallback) {
     throw new Error(`XUI_INBOUND_IDS_BY_PLAN không phải JSON hợp lệ: ${error.message}`);
   }
 }
-
+function normalizeProfileKey(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 function randomSubId() {
   return crypto.randomBytes(24).toString('hex');
 }
@@ -180,7 +184,11 @@ class XuiClient {
 
   getVlessProfile(planSlug, planId) {
     const profiles = this.config.vlessProfiles || {};
-    return profiles[planSlug] || profiles[String(planId)] || null;
+    const direct = profiles[planSlug] || profiles[String(planId)];
+    if (direct) return direct;
+    const wantedKeys = new Set([normalizeProfileKey(planSlug), normalizeProfileKey(planId)].filter(Boolean));
+    const matched = Object.entries(profiles).find(([key, value]) => value && wantedKeys.has(normalizeProfileKey(key)));
+    return matched ? matched[1] : null;
   }
 
   buildCustomSubscriptionUrl(subId) {
