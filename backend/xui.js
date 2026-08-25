@@ -103,6 +103,34 @@ class XuiClient {
     }
   }
 
+  async getClientTraffic(email) {
+    const payload = await this.request(`/panel/api/clients/traffic/${encodeURIComponent(email)}`);
+    const value = payload.obj || payload.data || {};
+    return {
+      upload: Number(value.up ?? value.upload ?? 0) || 0,
+      download: Number(value.down ?? value.download ?? 0) || 0,
+      total: Number(value.total ?? ((Number(value.up ?? value.upload ?? 0) || 0) + (Number(value.down ?? value.download ?? 0) || 0))) || 0,
+    };
+  }
+
+  async getClientHwids(email) {
+    const payload = await this.request(`/panel/api/clients/hwids/${encodeURIComponent(email)}`, { method: 'POST' });
+    return Array.isArray(payload.obj) ? payload.obj : [];
+  }
+
+  async resetClientTraffic(email) {
+    return this.request(`/panel/api/clients/resetTraffic/${encodeURIComponent(email)}`, { method: 'POST' });
+  }
+
+  async getClientUsage(email) {
+    const [client, traffic, hwids] = await Promise.all([
+      this.getClient(email),
+      this.getClientTraffic(email),
+      this.getClientHwids(email),
+    ]);
+    return { client, traffic, hwids };
+  }
+
   async addClient({ client, inboundIds }) {
     return this.request('/panel/api/clients/add', {
       method: 'POST',

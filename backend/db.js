@@ -379,6 +379,12 @@ function getVpnSubscriptionGroupBySubId(subId) {
   `).get(subId);
 }
 
+function rotateVpnSubscriptionGroupSubId(groupId, subId) {
+  db.prepare("UPDATE vpn_subscription_groups SET sub_id = ?, updated_at = datetime('now') WHERE id = ? AND status = 'active'")
+    .run(subId, groupId);
+  return db.prepare('SELECT * FROM vpn_subscription_groups WHERE id = ?').get(groupId);
+}
+
 function listVpnSubscriptionClients(groupId) {
   return db.prepare('SELECT * FROM vpn_subscription_clients WHERE group_id = ? ORDER BY datetime(created_at) ASC').all(groupId);
 }
@@ -511,7 +517,7 @@ module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, getVpnProvisionContext, getActiveVpnProvisionContext,
-  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,

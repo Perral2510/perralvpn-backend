@@ -3,14 +3,14 @@ const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
   createOrder, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, getActiveSubscription,
-  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId,
+  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, listVpnSubscriptionClients,
   updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
-const { XuiError, XuiClient, createXuiConfig } = require('./xui');
-const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, provisionOrder, resolveInboundIds } = require('./xui-provision');
+const { XuiError, XuiClient, createXuiConfig, randomSubId } = require('./xui');
+const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds } = require('./xui-provision');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -145,6 +145,35 @@ async function publicVpnSubscription(userId) {
   return group ? getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group }) : null;
 }
 
+async function publicVpnManagement(userId) {
+  const group = getVpnSubscriptionGroupByUserId(userId);
+  if (!group) return null;
+  const clients = listVpnSubscriptionClients(group.id);
+  const usage = await Promise.all(clients.map(async (item) => {
+    const result = await xuiClient.getClientUsage(item.xui_email);
+    const client = result.client?.client || result.client || {};
+    return {
+      email: item.xui_email,
+      uuid: item.client_uuid,
+      enabled: client.enable !== false,
+      machinesUsed: result.hwids.length,
+      trafficUsedBytes: result.traffic.total,
+    };
+  }));
+  const vpn = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group });
+  return {
+    plan: { slug: group.plan_slug, name: group.plan_name, capacity: group.capacity, deviceLimit: group.device_limit, lifetime: Boolean(group.is_lifetime) },
+    machinesUsed: usage.reduce((sum, item) => sum + item.machinesUsed, 0),
+    machinesMax: Number(group.device_limit || 0),
+    dataUsedBytes: usage.reduce((sum, item) => sum + item.trafficUsedBytes, 0),
+    dataMaxBytes: parseQuotaBytes(group.capacity),
+    clients: usage,
+    subscriptionUrl: vpn.subscriptionUrl,
+    qrDataUrl: vpn.qrDataUrl,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 app.get('/api/account/vpn/sub/:subId', (req, res) => {
   const subId = String(req.params.subId || '').trim();
   if (!/^[a-f0-9]{32,64}$/i.test(subId)) return res.status(404).type('text/plain').send('Not found');
@@ -156,6 +185,31 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
   } catch (error) {
     console.error('Custom subscription build failed:', error.name || 'Error');
     res.status(500).type('text/plain').send('Server error');
+  }
+});
+
+app.get('/api/account/vpn/management', requireAuth, async (req, res) => {
+  try {
+    const data = await publicVpnManagement(req.user.id);
+    res.json({ ok: true, data });
+  } catch (error) {
+    console.error('VPN management lookup failed:', error.name || 'Error');
+    res.status(503).json({ ok: false, message: 'Lỗi server' });
+  }
+});
+
+app.post('/api/account/vpn/reset-link', requireAuth, async (req, res) => {
+  try {
+    const group = getVpnSubscriptionGroupByUserId(req.user.id);
+    if (!group) return res.status(404).json({ ok: false, message: 'Chưa có gói VPN đang hoạt động.' });
+    const newSubId = randomSubId();
+    rotateVpnSubscriptionGroupSubId(group.id, newSubId);
+    const rotatedGroup = getVpnSubscriptionGroupBySubId(newSubId);
+    const data = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group: rotatedGroup });
+    res.json({ ok: true, message: 'Đã reset subscription URL và QR.', data });
+  } catch (error) {
+    console.error('VPN subscription reset failed:', error.name || 'Error');
+    res.status(503).json({ ok: false, message: 'Lỗi server' });
   }
 });
 
