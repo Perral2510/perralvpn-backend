@@ -602,11 +602,14 @@ app.put('/api/account/password', requireAuth, (req, res) => {
   const currentPassword = String(req.body.currentPassword || '');
   const newPassword = String(req.body.newPassword || '');
   const latest = getUserById(req.user.id);
-  if (!verifyPassword(currentPassword, latest.password_hash)) return res.status(400).json({ ok: false, message: 'Mật khẩu hiện tại không đúng.' });
+  if (!latest || !verifyPassword(currentPassword, latest.password_hash)) return res.status(400).json({ ok: false, message: 'Mật khẩu hiện tại không đúng.' });
   if (newPassword.length < 8) return res.status(400).json({ ok: false, message: 'Mật khẩu mới phải có ít nhất 8 ký tự.' });
-  db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashPassword(newPassword), req.user.id);
-  revokeOtherSessions(req.user.id, req.session.id);
-  res.json({ ok: true, message: 'Đã cập nhật mật khẩu.' });
+  db.transaction(() => {
+    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashPassword(newPassword), req.user.id);
+    revokeAllSessions(req.user.id);
+  })();
+  clearSessionCookie(res);
+  res.json({ ok: true, message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' });
 });
 
 app.get('/api/account/sessions', requireAuth, (req, res) => {
