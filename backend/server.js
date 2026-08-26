@@ -207,7 +207,14 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
   if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
   try {
     const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
-    res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).type('text/plain').send(text);
+    const displayName = 'perral.dpdns.org';
+    const filename = encodeURIComponent(`${displayName}.txt`);
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+      'Content-Disposition': `inline; filename*=UTF-8''${filename}`,
+      'X-Subscription-Name': displayName,
+    }).type('text/plain').send(text);
   } catch (error) {
     console.error('Custom subscription build failed:', error.name || 'Error');
     res.status(500).type('text/plain').send('Server error');
