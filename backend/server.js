@@ -170,6 +170,7 @@ async function publicVpnSubscription(userId) {
 async function publicVpnManagement(userId) {
   const group = getVpnSubscriptionGroupByUserId(userId);
   if (!group) return null;
+  const activeSubscription = getActiveSubscription(userId);
   const clients = listVpnSubscriptionClients(group.id);
   const usage = await Promise.all(clients.map(async (item) => {
     const result = await xuiClient.getClientUsage(item.xui_email);
@@ -186,7 +187,17 @@ async function publicVpnManagement(userId) {
   }));
   const vpn = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group });
   return {
-    plan: { slug: group.plan_slug, name: group.plan_name, capacity: group.capacity, deviceLimit: group.device_limit, lifetime: Boolean(group.is_lifetime) },
+    plan: {
+      slug: group.plan_slug,
+      name: group.plan_name,
+      capacity: group.capacity,
+      speed: activeSubscription?.speed || group.speed,
+      deviceLimit: group.device_limit,
+      lifetime: Boolean(group.is_lifetime),
+      features: activeSubscription?.features || [],
+    },
+    startedAt: activeSubscription?.startedAt || group.started_at,
+    expiresAt: activeSubscription?.expiresAt || group.expires_at,
     machinesUsed: usage.reduce((sum, item) => sum + item.machinesUsed, 0),
     machinesMax: Number(group.device_limit || 0),
     uploadBytes: usage.reduce((sum, item) => sum + Number(item.uploadBytes || 0), 0),

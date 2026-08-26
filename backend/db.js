@@ -529,7 +529,7 @@ function updateVpnProvision(id, { xuiEmail, clientUuid, subId, inboundIds, statu
 }
 
 function getActiveSubscription(userId) {
-  const row = db.prepare(`SELECT s.*, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.user_id = ? AND s.status = 'active' AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now')) ORDER BY datetime(s.created_at) DESC LIMIT 1`).get(userId);
+  const row = db.prepare(`SELECT s.*, p.name AS plan_name, p.capacity, p.speed, p.device_limit, p.is_lifetime, p.features_json FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.user_id = ? AND s.status = 'active' AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now')) ORDER BY datetime(s.created_at) DESC LIMIT 1`).get(userId);
   if (!row) return null;
   return {
     id: row.id,
@@ -542,6 +542,7 @@ function getActiveSubscription(userId) {
     status: row.status,
     startedAt: row.started_at,
     expiresAt: row.expires_at,
+    features: parseFeatures(row),
   };
 }
 
