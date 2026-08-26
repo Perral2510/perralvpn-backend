@@ -152,7 +152,8 @@ async function syncProvision({ xui, config, context, existingProvision = null, e
 function customVlessLinks({ xui, config, provision, clients = [] }) {
   const profile = xui.getVlessProfile(provision.plan_slug, provision.plan_id);
   if (!profile) throw new XuiError(`Chưa cấu hình VLESS profile cho gói ${provision.plan_slug || provision.plan_id}.`);
-  return clients.map((client) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark: client.remark || profile.remark }));
+  const remark = `PerralVPN - ${planDisplayName(provision)}`;
+  return clients.map((client) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark }));
 }
 
 async function getSubscriptionPayload({ xui, config, group, provision }) {
