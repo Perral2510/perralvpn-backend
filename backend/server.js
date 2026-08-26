@@ -230,7 +230,7 @@ app.post('/api/account/vpn/reset-link', requireAuth, async (req, res) => {
     if (!group) return res.status(404).json({ ok: false, message: 'Chưa có gói VPN đang hoạt động.' });
     const rotated = await rotateSubscriptionClientUuids({ xui: xuiClient, config: xuiConfig, group });
     const data = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group: rotated.group });
-    res.json({ ok: true, message: 'Đã reset VLESS; URL và QR subscription được giữ nguyên.', data });
+    res.json({ ok: true, message: 'Đã reset.', data });
   } catch (error) {
     console.error('VPN subscription reset failed:', error.name || 'Error');
     const message = error instanceof XuiError
