@@ -173,6 +173,27 @@ class XuiClient {
     return Array.isArray(payload.obj) ? payload.obj : [];
   }
 
+  async getPublicSubscriptionDocument(subId) {
+    const url = this.buildSubscriptionUrls(subId).subscriptionUrl;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'text/plain, application/octet-stream, */*' },
+        signal: controller.signal,
+      });
+      const body = await response.text();
+      if (!response.ok) throw new XuiError(`Subscription 3x-ui HTTP ${response.status}`, { status: response.status });
+      if (!body.trim()) throw new XuiError('Subscription 3x-ui trả về nội dung rỗng.');
+      return body;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new XuiError('Kết nối tới subscription 3x-ui hết thời gian chờ.');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   buildSubscriptionUrls(subId) {
     const encoded = encodeURIComponent(subId);
     return {

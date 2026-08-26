@@ -13,11 +13,26 @@ const {
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 const { XuiError, XuiClient, createXuiConfig } = require('./xui');
-const { getSubscriptionPayload, buildCustomSubscriptionText, getSubscriptionName, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionCredentials } = require('./xui-provision');
+const { getSubscriptionPayload, getSubscriptionName, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionCredentials } = require('./xui-provision');
 const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const SUBSCRIPTION_SCHEMES = /^(vless|vmess|trojan|ss|socks):\/\//i;
+
+function extractSubscriptionLinks(body) {
+  const raw = String(body || '').trim();
+  if (!raw) return [];
+  const candidates = [raw];
+  if (!/^[a-z]+:\/\//im.test(raw)) {
+    try { candidates.push(Buffer.from(raw.replace(/\s+/g, ''), 'base64').toString('utf8')); } catch {}
+  }
+  for (const candidate of candidates) {
+    const links = candidate.split(/\r?\n/).map((line) => line.trim()).filter((line) => SUBSCRIPTION_SCHEMES.test(line));
+    if (links.length) return links;
+  }
+  return [];
+}
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookie = process.env.SESSION_COOKIE_NAME || 'perral_session';
 const allowedOrigins = new Set(
@@ -206,8 +221,15 @@ app.get('/api/account/vpn/sub/:subId', async (req, res) => {
   const group = getVpnSubscriptionGroupBySubId(subId);
   if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
   try {
-    const links = await xuiClient.getSubLinks(subId);
-    const validLinks = links.map((link) => String(link || '').trim()).filter((link) => /^(vless|vmess|trojan|ss|socks):/i.test(link) && link.includes('://'));
+    let validLinks = [];
+    try {
+      validLinks = extractSubscriptionLinks((await xuiClient.getSubLinks(subId)).join('\n'));
+    } catch (error) {
+      console.warn('3x-ui subLinks unavailable; trying raw subscription endpoint:', error.name || 'Error');
+    }
+    if (!validLinks.length) {
+      validLinks = extractSubscriptionLinks(await xuiClient.getPublicSubscriptionDocument(subId));
+    }
     if (!validLinks.length) throw new XuiError('3x-ui chưa trả về link kết nối cho subscription này.');
     const plainText = `${validLinks.join('\n')}\n`;
     const subscriptionName = getSubscriptionName({ group, config: xuiConfig });
