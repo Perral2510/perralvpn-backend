@@ -53,6 +53,10 @@ function expiryTimestamp(context) {
   return context.expires_at ? Date.parse(context.expires_at) : 0;
 }
 
+function planDisplayName(context) {
+  return String(context.plan_name || context.plan_slug || 'VPN').replace(/\s+/g, ' ').trim().slice(0, 80) || 'VPN';
+}
+
 function buildClient(context, { clientUuid, xuiEmail, subId }, config) {
   const quotaBytes = parseQuotaBytes(context.capacity);
   const deviceLimit = Number(context.device_limit || 0);
@@ -66,7 +70,7 @@ function buildClient(context, { clientUuid, xuiEmail, subId }, config) {
     reset: /\/tháng|\/month|monthly/i.test(String(context.capacity || '')) ? 30 : 0,
     enable: true,
     subId,
-    comment: `PerralVPN ${context.plan_slug} ${context.order_id}`,
+    comment: `PerralVPN - ${planDisplayName(context)}`,
   };
 }
 
