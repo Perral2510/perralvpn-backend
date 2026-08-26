@@ -200,16 +200,19 @@ async function publicVpnManagement(userId) {
   };
 }
 
-app.get('/api/account/vpn/sub/:subId', (req, res) => {
+app.get('/api/account/vpn/sub/:subId', async (req, res) => {
   const subId = String(req.params.subId || '').trim();
   if (!/^[a-f0-9]{32,64}$/i.test(subId)) return res.status(404).type('text/plain').send('Not found');
   const group = getVpnSubscriptionGroupBySubId(subId);
   if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
   try {
-    const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
+    const links = await xuiClient.getSubLinks(subId);
+    const validLinks = links.map((link) => String(link || '').trim()).filter((link) => /^(vless|vmess|trojan|ss|socks):/i.test(link) && link.includes('://'));
+    if (!validLinks.length) throw new XuiError('3x-ui chưa trả về link kết nối cho subscription này.');
+    const plainText = `${validLinks.join('\n')}\n`;
     const subscriptionName = getSubscriptionName({ group, config: xuiConfig });
     const wantsPlain = String(req.query.format || '').toLowerCase() === 'plain';
-    const responseText = wantsPlain ? `${text.trim()}\n` : Buffer.from(`${text.trim()}\n`, 'utf8').toString('base64');
+    const responseText = wantsPlain ? plainText : Buffer.from(plainText, 'utf8').toString('base64');
     const filename = encodeURIComponent(`${subscriptionName}.txt`);
     res.set({
       'Access-Control-Allow-Origin': '*',
@@ -219,8 +222,8 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
       'X-Subscription-Name': subscriptionName,
     }).type('text/plain').send(responseText);
   } catch (error) {
-    console.error('Custom subscription build failed:', error.name || 'Error');
-    res.status(500).type('text/plain').send('Server error');
+    console.error('Custom subscription build failed:', error.name || 'Error', error instanceof XuiError ? `(${error.message})` : '');
+    res.status(error instanceof XuiError ? 503 : 500).type('text/plain').send(error instanceof XuiError ? error.message : 'Server error');
   }
 });
 

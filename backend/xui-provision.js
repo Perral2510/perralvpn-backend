@@ -194,15 +194,18 @@ async function getSubscriptionPayload({ xui, config, group, provision }) {
   try {
     links = await xui.getSubLinks(source.sub_id);
   } catch (error) {
-    warning = 'Không lấy được link VLESS riêng từ 3x-ui; URL subscription vẫn được tạo theo cấu hình sub path.';
+    warning = 'Không lấy được link VLESS riêng từ 3x-ui; URL raw của 3x-ui vẫn được giữ làm dự phòng.';
   }
+  const relayUrl = typeof xui.buildCustomSubscriptionUrl === 'function' ? xui.buildCustomSubscriptionUrl(source.sub_id) : null;
+  const subscriptionUrl = relayUrl || urls.subscriptionUrl;
   return {
     subscriptionName: getSubscriptionName({ group: source, config }),
-    subscriptionUrl: urls.subscriptionUrl,
-    jsonUrl: urls.jsonUrl,
-    clashUrl: urls.clashUrl,
+    subscriptionUrl,
+    rawSubscriptionUrl: urls.subscriptionUrl,
+    jsonUrl: relayUrl ? null : urls.jsonUrl,
+    clashUrl: relayUrl ? null : urls.clashUrl,
     vlessUrl: links[0] || null,
-    qrDataUrl: await xui.qrDataUrl(urls.subscriptionUrl),
+    qrDataUrl: await xui.qrDataUrl(subscriptionUrl),
     links,
     warning,
     clients: clients.map((item) => ({ uuid: item.client_uuid, email: item.xui_email })),
