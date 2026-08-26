@@ -15,6 +15,7 @@ const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 const { XuiError, XuiClient, createXuiConfig } = require('./xui');
 const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionClientUuids } = require('./xui-provision');
 const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
+const { countRecentClientIps } = require('./vpn-usage');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -175,11 +176,13 @@ async function publicVpnManagement(userId) {
   const usage = await Promise.all(clients.map(async (item) => {
     const result = await xuiClient.getClientUsage(item.xui_email);
     const client = result.client?.client || result.client || {};
+    const hwidCount = Array.isArray(result.hwids) ? result.hwids.length : 0;
+    const recentIpCount = countRecentClientIps(result.ips);
     return {
       email: item.xui_email,
       uuid: item.client_uuid,
       enabled: client.enable !== false,
-      machinesUsed: result.hwids.length,
+      machinesUsed: hwidCount || recentIpCount,
       uploadBytes: result.traffic.upload,
       downloadBytes: result.traffic.download,
       trafficUsedBytes: result.traffic.total,

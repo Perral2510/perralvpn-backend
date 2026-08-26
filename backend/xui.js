@@ -118,17 +118,23 @@ class XuiClient {
     return Array.isArray(payload.obj) ? payload.obj : [];
   }
 
+  async getClientIps(email) {
+    const payload = await this.request(`/panel/api/clients/ips/${encodeURIComponent(email)}`, { method: 'POST' });
+    return Array.isArray(payload.obj) ? payload.obj : [];
+  }
+
   async resetClientTraffic(email) {
     return this.request(`/panel/api/clients/resetTraffic/${encodeURIComponent(email)}`, { method: 'POST' });
   }
 
   async getClientUsage(email) {
-    const [client, traffic, hwids] = await Promise.all([
+    const [client, traffic, hwids, ips] = await Promise.all([
       this.getClient(email),
       this.getClientTraffic(email),
-      this.getClientHwids(email),
+      this.getClientHwids(email).catch(() => []),
+      this.getClientIps(email).catch(() => []),
     ]);
-    return { client, traffic, hwids };
+    return { client, traffic, hwids, ips };
   }
 
   async addClient({ client, inboundIds }) {
