@@ -36,7 +36,12 @@ function parseInboundIdList(value) {
 
 function resolveInboundIds(config, context) {
   const map = config.inboundIdsByPlan || {};
-  const configured = map[context.plan_slug] ?? map[String(context.plan_id)];
+  const keys = [context.plan_slug, String(context.plan_id)];
+  if (/^vina-khong-nen-(?:pro|max|vv)$/i.test(String(context.plan_slug || ''))) keys.push('vina-khong-nen');
+  let configured;
+  for (const key of keys) {
+    if (key && map[key] !== undefined) { configured = map[key]; break; }
+  }
   const ids = Array.isArray(configured) ? configured.map(Number).filter((id) => Number.isInteger(id) && id > 0) : parseInboundIdList(configured);
   const fallback = ids.length ? ids : parseInboundIdList(config.defaultInboundIds);
   return [...new Set(fallback)];

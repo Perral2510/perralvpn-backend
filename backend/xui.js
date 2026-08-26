@@ -183,7 +183,12 @@ class XuiClient {
 
   getVlessProfile(planSlug, planId) {
     const profiles = this.config.vlessProfiles || {};
-    return profiles[planSlug] || profiles[String(planId)] || null;
+    const keys = [planSlug, String(planId)];
+    if (/^vina-khong-nen-(?:pro|max|vv)$/i.test(String(planSlug || ''))) keys.push('vina-khong-nen');
+    for (const key of keys) {
+      if (key && profiles[key]) return profiles[key];
+    }
+    return null;
   }
 
   buildCustomSubscriptionUrl(subId) {
