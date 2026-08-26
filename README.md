@@ -173,7 +173,7 @@ https://perral.de5.net:3001/api/webhooks/sepay/ipn
 
 Backend chạy HTTPS trực tiếp trên host port `3001` (container port `3001`) và không chiếm port 80/443. Chứng chỉ phải hợp lệ cho `perral.de5.net`, với key/certificate được mount vào `/etc/sepay/tls` trong container. Port 3001 phải được cho phép qua firewall/security group của VPS. Không dùng URL `http://`, không bỏ `:3001`, và không dùng certificate self-signed.
 
-Khi người dùng bấm **Reset link/QR**, backend đổi cả `subId` subscription và UUID của toàn bộ client thuộc gói trên 3x-ui. Vì vậy subscription URL cũ và các VLESS URL cũ sẽ không còn hợp lệ sau khi 3x-ui áp dụng cấu hình; người dùng phải nhập lại URL hoặc quét QR mới. Payload chính dùng relay PerralVPN (`PUBLIC_API_URL/api/account/vpn/sub/<subId>`), relay lấy VLESS links trực tiếp từ 3x-ui rồi trả Base64/plain theo query; URL raw `/sub`, `/json`, `/clash` của 3x-ui được giữ làm fallback trong response. Response có tên dạng `<tên gói> - <domain frontend>` và VLESS remark dạng `VPN-<tên gói>`.
+Khi người dùng bấm **Reset link/QR**, backend đổi cả `subId` subscription và UUID của toàn bộ client thuộc gói trên 3x-ui. Vì vậy subscription URL cũ và các VLESS URL cũ sẽ không còn hợp lệ sau khi 3x-ui áp dụng cấu hình; người dùng phải nhập lại URL hoặc quét QR mới. Payload chính dùng URL/QR raw của subscription service 3x-ui như phiên bản trước. Endpoint custom PerralVPN (`PUBLIC_API_URL/api/account/vpn/sub/<subId>`) chỉ được giữ làm relay tương thích và passthrough nguyên response raw từ 3x-ui, không tự dựng, phân tích hoặc mã hóa lại nội dung. Response có tên dạng `<tên gói> - <domain frontend>` và VLESS remark dạng `VPN-<tên gói>`.
 
 Kiểm tra sau khi DNS/SSL đã hoạt động:
 

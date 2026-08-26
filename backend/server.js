@@ -18,21 +18,6 @@ const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const SUBSCRIPTION_SCHEMES = /^(vless|vmess|trojan|ss|socks):\/\//i;
-
-function extractSubscriptionLinks(body) {
-  const raw = String(body || '').trim();
-  if (!raw) return [];
-  const candidates = [raw];
-  if (!/^[a-z]+:\/\//im.test(raw)) {
-    try { candidates.push(Buffer.from(raw.replace(/\s+/g, ''), 'base64').toString('utf8')); } catch {}
-  }
-  for (const candidate of candidates) {
-    const links = candidate.split(/\r?\n/).map((line) => line.trim()).filter((line) => SUBSCRIPTION_SCHEMES.test(line));
-    if (links.length) return links;
-  }
-  return [];
-}
 const isProduction = process.env.NODE_ENV === 'production';
 const sessionCookie = process.env.SESSION_COOKIE_NAME || 'perral_session';
 const allowedOrigins = new Set(
@@ -221,27 +206,14 @@ app.get('/api/account/vpn/sub/:subId', async (req, res) => {
   const group = getVpnSubscriptionGroupBySubId(subId);
   if (!group || !xuiClient || !xuiConfig) return res.status(404).type('text/plain').send('Not found');
   try {
-    let validLinks = [];
-    try {
-      const subLinks = await xuiClient.getSubLinks(subId);
-      validLinks = extractSubscriptionLinks(Array.isArray(subLinks) ? subLinks.join('\n') : subLinks);
-    } catch (error) {
-      console.warn('3x-ui subLinks unavailable; trying raw subscription endpoint:', error.name || 'Error');
-    }
-    if (!validLinks.length) {
-      validLinks = extractSubscriptionLinks(await xuiClient.getPublicSubscriptionDocument(subId));
-    }
-    if (!validLinks.length) throw new XuiError('3x-ui chưa trả về link kết nối cho subscription này.');
-    const plainText = `${validLinks.join('\n')}\n`;
+    const responseText = await xuiClient.getPublicSubscriptionDocument(subId);
     const subscriptionName = getSubscriptionName({ group, config: xuiConfig });
-    const wantsPlain = String(req.query.format || '').toLowerCase() === 'plain';
-    const responseText = wantsPlain ? plainText : Buffer.from(plainText, 'utf8').toString('base64');
     const filename = encodeURIComponent(`${subscriptionName}.txt`);
     res.set({
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',
       'Content-Disposition': `inline; filename*=UTF-8''${filename}`,
-      'X-Subscription-Format': wantsPlain ? 'vless-url-lines' : 'base64-vless-url-lines',
+      'X-Subscription-Format': 'passthrough-xui',
       'X-Subscription-Name': subscriptionName,
     }).type('text/plain').send(responseText);
   } catch (error) {

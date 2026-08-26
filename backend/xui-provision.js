@@ -196,14 +196,13 @@ async function getSubscriptionPayload({ xui, config, group, provision }) {
   } catch (error) {
     warning = 'Không lấy được link VLESS riêng từ 3x-ui; URL raw của 3x-ui vẫn được giữ làm dự phòng.';
   }
-  const relayUrl = typeof xui.buildCustomSubscriptionUrl === 'function' ? xui.buildCustomSubscriptionUrl(source.sub_id) : null;
-  const subscriptionUrl = relayUrl || urls.subscriptionUrl;
+  const subscriptionUrl = urls.subscriptionUrl;
   return {
     subscriptionName: getSubscriptionName({ group: source, config }),
     subscriptionUrl,
     rawSubscriptionUrl: urls.subscriptionUrl,
-    jsonUrl: relayUrl ? null : urls.jsonUrl,
-    clashUrl: relayUrl ? null : urls.clashUrl,
+    jsonUrl: urls.jsonUrl,
+    clashUrl: urls.clashUrl,
     vlessUrl: links[0] || null,
     qrDataUrl: await xui.qrDataUrl(subscriptionUrl),
     links,
