@@ -170,7 +170,10 @@ class XuiClient {
 
   async getSubLinks(subId) {
     const payload = await this.request(`/panel/api/clients/subLinks/${encodeURIComponent(subId)}`);
-    return Array.isArray(payload.obj) ? payload.obj : [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.obj)) return payload.obj;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
   }
 
   async getPublicSubscriptionDocument(subId) {

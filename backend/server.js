@@ -223,7 +223,8 @@ app.get('/api/account/vpn/sub/:subId', async (req, res) => {
   try {
     let validLinks = [];
     try {
-      validLinks = extractSubscriptionLinks((await xuiClient.getSubLinks(subId)).join('\n'));
+      const subLinks = await xuiClient.getSubLinks(subId);
+      validLinks = extractSubscriptionLinks(Array.isArray(subLinks) ? subLinks.join('\n') : subLinks);
     } catch (error) {
       console.warn('3x-ui subLinks unavailable; trying raw subscription endpoint:', error.name || 'Error');
     }
