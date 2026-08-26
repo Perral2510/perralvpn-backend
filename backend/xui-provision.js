@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const {
   getVpnProvisionByOrderId,
+  getVpnProvisionByUserId,
   getVpnSubscriptionGroupBySubscriptionId,
   listVpnSubscriptionClients,
   saveVpnSubscriptionGroup,
@@ -10,6 +11,7 @@ const {
   saveVpnSubscriptionClient,
   saveVpnProvision,
   updateVpnProvision,
+  rotateVpnClientUuids,
 } = require('./db');
 const { XuiError, randomSubId } = require('./xui');
 
@@ -182,6 +184,56 @@ function buildCustomSubscriptionText({ xui, config, group, provision }) {
   return `${customVlessLinks({ xui, config, provision: source, clients }).join('\n')}\n`;
 }
 
+function isPerralOwnedClient(identity, stored, group) {
+  if (!identity) return false;
+  if (String(identity.id || '') === String(stored.client_uuid || '')) return true;
+  if (String(identity.subId || identity.subID || '') === String(group.sub_id || '')) return true;
+  return /^PerralVPN(?:\s|-)/i.test(String(identity.comment || identity.remark || ''));
+}
+
+async function rotateSubscriptionClientUuids({ xui, config, group }) {
+  if (!xui || !config) throw new XuiError('Chưa cấu hình kết nối 3x-ui trên backend.');
+  if (!group) throw new XuiError('Không tìm thấy subscription group đang hoạt động.');
+  const storedClients = listVpnSubscriptionClients(group.id);
+  if (!storedClients.length) throw new XuiError('Subscription chưa có client để reset.');
+  const updated = [];
+  const rollback = async () => {
+    await Promise.allSettled(updated.map(({ xuiEmail, oldClient }) => xui.updateClient(xuiEmail, oldClient)));
+  };
+  try {
+    for (const stored of storedClients) {
+      const existing = await xui.getClient(stored.xui_email);
+      const identity = existing?.client || existing;
+      if (!isPerralOwnedClient(identity, stored, group)) {
+        throw new XuiError(`Không thể xác minh client 3x-ui của ${stored.xui_email}; giữ nguyên kết nối hiện tại.`);
+      }
+      const nextUuid = crypto.randomUUID();
+      const nextClient = buildClient({
+        plan_slug: group.plan_slug,
+        plan_name: group.plan_name,
+        plan_id: group.plan_id,
+        capacity: group.capacity,
+        device_limit: group.device_limit,
+        expires_at: group.expires_at,
+      }, { clientUuid: nextUuid, xuiEmail: stored.xui_email, subId: group.sub_id }, config);
+      await xui.updateClient(stored.xui_email, nextClient);
+      updated.push({ xuiEmail: stored.xui_email, oldClient: identity, clientUuid: nextUuid });
+    }
+    const primaryProvision = getVpnProvisionByUserId(group.user_id);
+    const primary = updated.find((item) => item.xuiEmail === primaryProvision?.xui_email) || updated[0];
+    const rotatedGroup = rotateVpnClientUuids({
+      groupId: group.id,
+      subscriptionId: group.subscription_id,
+      clients: updated,
+      primaryClientUuid: primary.clientUuid,
+    });
+    return { group: rotatedGroup, clients: updated };
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
+}
+
 async function addClientToGroup({ xui, config, group, inboundIds, clientEmail }) {
   if (!group) throw new XuiError('Không tìm thấy subscription group.');
   const email = String(clientEmail || '').trim().toLowerCase();
@@ -209,6 +261,7 @@ module.exports = {
   getVpnProvisionByOrderId,
   getSubscriptionPayload,
   buildCustomSubscriptionText,
+  rotateSubscriptionClientUuids,
   addClientToGroup,
   parseQuotaBytes,
   provisionOrder,
