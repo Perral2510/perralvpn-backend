@@ -147,10 +147,20 @@ db.exec(`
 `);
 
 const PLAN_SEEDS = [
-  { id: 7, slug: 'vina-khong-nen', category: 'vn', name: 'VINA KHÔNG NỀN BASIC', nameEn: 'VINA KHÔNG NỀN BASIC', price: 15000, capacity: '1000GB', speed: '100Mbps', devices: 2, lifetime: 0, features: ['0 nền', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
-  { id: 8, slug: 'vina-khong-nen-pro', category: 'vn', name: 'VINA KHÔNG NỀN PRO', nameEn: 'VINA KHÔNG NỀN PRO', price: 35000, capacity: '3000GB', speed: '300Mbps', devices: 5, lifetime: 0, features: ['0 nền', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
-  { id: 9, slug: 'vina-khong-nen-max', category: 'vn', name: 'VINA KHÔNG NỀN MAX', nameEn: 'VINA KHÔNG NỀN MAX', price: 65000, capacity: '6000GB', speed: '700Mbps', devices: 8, lifetime: 0, features: ['0 nền', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
-  { id: 10, slug: 'vina-khong-nen-vv', category: 'vn', name: 'VINA KHÔNG NỀN VV', nameEn: 'VINA KHÔNG NỀN VV', price: 79000, capacity: '2000GB', speed: '1Gbps', devices: 2, lifetime: 1, features: ['0 nền', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
+  { id: 7, slug: 'vina-khong-nen', category: 'vn', name: 'VINA KHÔNG NỀN BASIC', nameEn: 'VINA KHÔNG NỀN BASIC', price: 20000, capacity: '1000GB', speed: '100Mbps', devices: 2, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 8, slug: 'vina-khong-nen-pro', category: 'vn', name: 'VINA KHÔNG NỀN PRO', nameEn: 'VINA KHÔNG NỀN PRO', price: 35000, capacity: '3000GB', speed: '300Mbps', devices: 5, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 9, slug: 'vina-khong-nen-max', category: 'vn', name: 'VINA KHÔNG NỀN MAX', nameEn: 'VINA KHÔNG NỀN MAX', price: 65000, capacity: '6000GB', speed: '700Mbps', devices: 8, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 10, slug: 'vina-khong-nen-vv', category: 'vn', name: 'VINA KHÔNG NỀN VV', nameEn: 'VINA KHÔNG NỀN VV', price: 79000, capacity: '2000GB', speed: '1Gbps', devices: 2, lifetime: 1, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
+  { id: 11, slug: 'basic-vpn', category: 'vpn', name: 'Basic VPN', nameEn: 'Basic VPN', price: 20000, capacity: '1000GB', speed: '100Mbps', devices: 1, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 12, slug: 'pro-vpn', category: 'vpn', name: 'Pro VPN', nameEn: 'Pro VPN', price: 40000, capacity: '3000GB', speed: '300Mbps', devices: 2, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 13, slug: 'vip-vpn', category: 'vpn', name: 'Vip VPN', nameEn: 'Vip VPN', price: 60000, capacity: '6000GB', speed: '700Mbps', devices: 3, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 14, slug: 'max-vpn', category: 'vpn', name: 'Max VPN', nameEn: 'Max VPN', price: 90000, capacity: '9999GB', speed: '1Gbps', devices: 5, lifetime: 1, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
+  { id: 15, slug: 'ultra-vpn', category: 'vpn', name: 'Ultra VPN', nameEn: 'Ultra VPN', price: 129000, capacity: '15000GB', speed: '1.2Gbps', devices: 6, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 16, slug: 'admin', category: 'vpn', name: 'VPN ADMIN', nameEn: 'VPN ADMIN', price: 999000, capacity: 'KGH', speed: 'KGH', devices: 0, lifetime: 1, features: ['0 nền + TikTok', 'Hai VLESS host', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
+  { id: 17, slug: 'premium-vpn', category: 'vpn', name: 'Premium VPN', nameEn: 'Premium VPN', price: 159000, capacity: '25000GB', speed: '1.5Gbps', devices: 8, lifetime: 0, features: ['0 nền + TikTok', 'Hai VLESS host', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 18, slug: 'business-vpn', category: 'vpn', name: 'Business VPN', nameEn: 'Business VPN', price: 299000, capacity: 'KGH', speed: 'KGH', devices: 12, lifetime: 0, features: ['0 nền + TikTok', 'Hai VLESS host', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 19, slug: 'enterprise-vpn', category: 'vpn', name: 'Enterprise VPN', nameEn: 'Enterprise VPN', price: 499000, capacity: 'KGH', speed: 'KGH', devices: 20, lifetime: 0, features: ['0 nền + TikTok', 'Hai VLESS host', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
+  { id: 20, slug: 'vip-lifetime-vpn', category: 'vpn', name: 'VIP Lifetime VPN', nameEn: 'VIP Lifetime VPN', price: 1499000, capacity: 'KGH', speed: 'KGH', devices: 0, lifetime: 1, features: ['0 nền + TikTok', 'Hai VLESS host', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
 ];
 const seedPlan = db.prepare(`INSERT INTO plans (id, slug, category, name, name_en, price_vnd, capacity, speed, device_limit, is_lifetime, features_json, is_active) VALUES (@id, @slug, @category, @name, @nameEn, @price, @capacity, @speed, @devices, @lifetime, @features, 1) ON CONFLICT(id) DO UPDATE SET slug = excluded.slug, category = excluded.category, name = excluded.name, name_en = excluded.name_en, price_vnd = excluded.price_vnd, capacity = excluded.capacity, speed = excluded.speed, device_limit = excluded.device_limit, is_lifetime = excluded.is_lifetime, features_json = excluded.features_json, is_active = 1`);
 for (const plan of PLAN_SEEDS) seedPlan.run({ ...plan, features: JSON.stringify(plan.features) });
@@ -166,7 +176,9 @@ db.exec(`
   FROM vpn_provisions v WHERE EXISTS (SELECT 1 FROM vpn_subscription_groups g WHERE g.id = 'legacy-' || v.id);
 `);
 // Keep historical orders/subscriptions queryable, but remove legacy plans from the storefront and new purchases.
-db.prepare("UPDATE plans SET is_active = CASE WHEN slug IN ('vina-khong-nen', 'vina-khong-nen-pro', 'vina-khong-nen-max', 'vina-khong-nen-vv') THEN 1 ELSE 0 END").run();
+const activePlanSlugs = PLAN_SEEDS.map((plan) => plan.slug);
+const activePlanPlaceholders = activePlanSlugs.map(() => '?').join(',');
+db.prepare(`UPDATE plans SET is_active = CASE WHEN slug IN (${activePlanPlaceholders}) THEN 1 ELSE 0 END`).run(...activePlanSlugs);
 
 function makeUserCode() {
   let code;

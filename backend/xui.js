@@ -3,6 +3,14 @@
 const crypto = require('node:crypto');
 const QRCode = require('qrcode');
 
+const ZERO_BASE_HOST = 'vnpt.theworkpc.com';
+const TIKTOK_HOST = 'api24-normal-alisg.tiktokv.com';
+const ZERO_BASE_PLANS = new Set([
+  'vina-khong-nen', 'vina-khong-nen-pro', 'vina-khong-nen-max', 'vina-khong-nen-vv',
+]);
+const TIKTOK_PLANS = new Set(['basic-vpn', 'pro-vpn', 'vip-vpn', 'max-vpn', 'ultra-vpn']);
+const COMPOSITE_PLANS = new Set(['admin', 'premium-vpn', 'business-vpn', 'enterprise-vpn', 'vip-lifetime-vpn']);
+
 class XuiError extends Error {
   constructor(message, details = {}) {
     super(message);
@@ -183,12 +191,30 @@ class XuiClient {
 
   getVlessProfile(planSlug, planId) {
     const profiles = this.config.vlessProfiles || {};
+    const slug = String(planSlug || '').trim().toLowerCase();
     const keys = [planSlug, String(planId)];
-    if (/^vina-khong-nen-(?:pro|max|vv)$/i.test(String(planSlug || ''))) keys.push('vina-khong-nen');
+    if (ZERO_BASE_PLANS.has(slug)) keys.push('vina-khong-nen');
+    if (TIKTOK_PLANS.has(slug) || COMPOSITE_PLANS.has(slug)) keys.push('tiktok');
     for (const key of keys) {
       if (key && profiles[key]) return profiles[key];
     }
     return null;
+  }
+
+  getVlessProfiles(planSlug, planId) {
+    const slug = String(planSlug || '').trim().toLowerCase();
+    const isZeroBase = ZERO_BASE_PLANS.has(slug) || COMPOSITE_PLANS.has(slug);
+    const isTikTok = TIKTOK_PLANS.has(slug) || COMPOSITE_PLANS.has(slug);
+    const profiles = [];
+    if (!isZeroBase && !isTikTok) {
+      const legacyProfile = this.getVlessProfile(planSlug, planId);
+      return legacyProfile ? [legacyProfile] : [];
+    }
+    const zeroProfile = this.getVlessProfile('vina-khong-nen', 7) || this.getVlessProfile(planSlug, planId);
+    const tiktokProfile = this.getVlessProfile('tiktok', null) || this.getVlessProfile(planSlug, planId) || zeroProfile;
+    if (isZeroBase && zeroProfile) profiles.push({ ...zeroProfile, address: ZERO_BASE_HOST });
+    if (isTikTok && tiktokProfile) profiles.push({ ...tiktokProfile, address: TIKTOK_HOST });
+    return profiles;
   }
 
   buildCustomSubscriptionUrl(subId) {

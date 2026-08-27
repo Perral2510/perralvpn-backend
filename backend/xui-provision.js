@@ -36,13 +36,27 @@ function parseInboundIdList(value) {
 
 function resolveInboundIds(config, context) {
   const map = config.inboundIdsByPlan || {};
-  const keys = [context.plan_slug, String(context.plan_id)];
-  if (/^vina-khong-nen-(?:pro|max|vv)$/i.test(String(context.plan_slug || ''))) keys.push('vina-khong-nen');
-  let configured;
-  for (const key of keys) {
-    if (key && map[key] !== undefined) { configured = map[key]; break; }
+  const slug = String(context.plan_slug || '').trim().toLowerCase();
+  const directKeys = [context.plan_slug, String(context.plan_id)];
+  const logicalKeys = [];
+  if (/^vina-khong-nen(?:-(?:pro|max|vv))?$/i.test(slug)) logicalKeys.push('vina-khong-nen');
+  if (/^(?:basic-vpn|pro-vpn|vip-vpn|max-vpn|ultra-vpn)$/i.test(slug)) {
+    logicalKeys.push(map.tiktok !== undefined ? 'tiktok' : 'vina-khong-nen');
   }
-  const ids = Array.isArray(configured) ? configured.map(Number).filter((id) => Number.isInteger(id) && id > 0) : parseInboundIdList(configured);
+  if (/^(?:admin|premium-vpn|business-vpn|enterprise-vpn|vip-lifetime-vpn)$/i.test(slug)) {
+    const compositeKeys = ['vina-khong-nen', 'tiktok'].filter((key) => map[key] !== undefined);
+    logicalKeys.push(...(compositeKeys.length ? compositeKeys : ['vina-khong-nen']));
+  }
+
+  const configuredDirectKeys = directKeys.filter((key) => key && map[key] !== undefined);
+  const keys = configuredDirectKeys.length ? [...new Set(configuredDirectKeys)] : [...new Set(logicalKeys)];
+  const configuredIds = keys.flatMap((key) => {
+    if (map[key] === undefined) return [];
+    return Array.isArray(map[key])
+      ? map[key].map(Number).filter((id) => Number.isInteger(id) && id > 0)
+      : parseInboundIdList(map[key]);
+  });
+  const ids = [...new Set(configuredIds)];
   const fallback = ids.length ? ids : parseInboundIdList(config.defaultInboundIds);
   return [...new Set(fallback)];
 }
@@ -157,10 +171,12 @@ async function syncProvision({ xui, config, context, existingProvision = null, e
 }
 
 function customVlessLinks({ xui, config, provision, clients = [] }) {
-  const profile = xui.getVlessProfile(provision.plan_slug, provision.plan_id);
-  if (!profile) throw new XuiError(`Chưa cấu hình VLESS profile cho gói ${provision.plan_slug || provision.plan_id}.`);
+  const profiles = typeof xui.getVlessProfiles === 'function'
+    ? xui.getVlessProfiles(provision.plan_slug, provision.plan_id)
+    : [xui.getVlessProfile(provision.plan_slug, provision.plan_id)].filter(Boolean);
+  if (!profiles.length) throw new XuiError(`Chưa cấu hình VLESS profile cho gói ${provision.plan_slug || provision.plan_id}.`);
   const remark = `PerralVPN - ${planDisplayName(provision)}`;
-  return clients.map((client) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark }));
+  return clients.flatMap((client) => profiles.map((profile) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark })));
 }
 
 async function getSubscriptionPayload({ xui, config, group, provision }) {
