@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const ZERO_BASE_HOST = 'vnpt.theworkpc.com';
 const TIKTOK_HOST = 'api24-normal-alisg.tiktokv.com';
 const ZERO_BASE_PLANS = new Set([
-  'vina-khong-nen', 'vina-khong-nen-pro', 'vina-khong-nen-max', 'vina-khong-nen-vv',
+  'vina-khong-nen', 'vina-khong-nen-pro', 'vina-khong-nen-max', 'vina-khong-nen-vv', 'vina-khong-nen-mxh',
 ]);
 const TIKTOK_PLANS = new Set(['basic-vpn', 'pro-vpn', 'vip-vpn', 'max-vpn', 'ultra-vpn']);
 const COMPOSITE_PLANS = new Set(['admin', 'premium-vpn', 'business-vpn', 'enterprise-vpn', 'vip-lifetime-vpn']);
@@ -61,6 +61,12 @@ function createXuiConfig(env = process.env) {
     inboundIdsByPlan: parseJsonEnv(env.XUI_INBOUND_IDS_BY_PLAN, {}),
     defaultInboundIds: String(env.XUI_DEFAULT_INBOUND_IDS || '').trim(),
     deviceLimitAsIpLimit: String(env.XUI_DEVICE_LIMIT_AS_IP_LIMIT || 'false').toLowerCase() === 'true',
+    gameBlockingEnabled: String(env.XUI_GAME_BLOCKING_ENABLED || 'true').toLowerCase() !== 'false',
+    gameBlockedPlanSlugs: String(env.XUI_GAME_BLOCKED_PLAN_SLUGS || 'vina-khong-nen-mxh')
+      .split(',').map((slug) => slug.trim().toLowerCase()).filter(Boolean),
+    gameBlockingRuleTag: String(env.XUI_GAME_BLOCKING_RULE_TAG || 'perralvpn-block-games').trim(),
+    gameBlockingOutboundTag: String(env.XUI_GAME_BLOCKING_OUTBOUND_TAG || 'perralvpn-block-games').trim(),
+    xrayOutboundTestUrl: String(env.XUI_OUTBOUND_TEST_URL || 'https://www.google.com/generate_204').trim(),
   };
 }
 
@@ -98,6 +104,28 @@ class XuiClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  async getXraySetting() {
+    const payload = await this.request('/panel/api/xray/', { method: 'POST' });
+    let value = payload?.obj ?? payload?.data ?? payload;
+    if (typeof value === 'string') value = JSON.parse(value);
+    if (value && typeof value.xraySetting === 'string') value.xraySetting = JSON.parse(value.xraySetting);
+    if (value && value.xraySetting && typeof value.xraySetting === 'object') return value.xraySetting;
+    if (value && typeof value === 'object' && (value.routing || value.inbounds || value.outbounds)) return value;
+    throw new XuiError('3x-ui trả về cấu hình Xray không hợp lệ.');
+  }
+
+  async updateXraySetting(xraySetting, outboundTestUrl) {
+    const form = new URLSearchParams({
+      xraySetting: JSON.stringify(xraySetting),
+      outboundTestUrl: String(outboundTestUrl || this.config.xrayOutboundTestUrl || 'https://www.google.com/generate_204'),
+    });
+    return this.request('/panel/api/xray/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: form.toString(),
+    });
   }
 
   async getClient(email) {
