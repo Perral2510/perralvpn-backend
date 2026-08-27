@@ -6,14 +6,14 @@ const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
   createOrder, getOrderById, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid,
   insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getActiveSubscription,
-  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients, listGameBlockedClientEmails,
+  getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients, listMxhClientEmails,
   updateVpnProvisionStatus,
   createSession, getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
 } = require('./db');
 const { isMailerConfigured, sendPasswordResetCode } = require('./mailer');
 const { XuiError, XuiClient, createXuiConfig } = require('./xui');
-const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionClientUuids, syncGameBlockingRouting } = require('./xui-provision');
+const { getSubscriptionPayload, buildCustomSubscriptionText, addClientToGroup, parseQuotaBytes, provisionOrder, resolveInboundIds, rotateSubscriptionClientUuids, syncMxhTcpOnly } = require('./xui-provision');
 const { getSepayCheckout, getSepayIpnSecret } = require('./sepay');
 const { countRecentClientIps } = require('./vpn-usage');
 
@@ -161,12 +161,13 @@ async function syncOrderToXui(orderId) {
   const context = getVpnProvisionContext(orderId);
   if (!context) throw new XuiError('Không tìm thấy context gói VPN để đồng bộ.');
   const result = await provisionOrder({ xui: xuiClient, config: xuiConfig, context });
-  if (xuiConfig?.gameBlockingEnabled) {
+  if (xuiConfig?.mxhTcpOnlyEnabled) {
     try {
-      const clientEmails = listGameBlockedClientEmails(xuiConfig.gameBlockedPlanSlugs[0] || 'vina-khong-nen-mxh');
-      await syncGameBlockingRouting({ xui: xuiClient, config: xuiConfig, clientEmails });
+      const clientEmails = (xuiConfig.mxhPlanSlugs || ['vina-khong-nen-mxh'])
+        .flatMap((planSlug) => listMxhClientEmails(planSlug));
+      await syncMxhTcpOnly({ xui: xuiClient, config: xuiConfig, clientEmails });
     } catch (error) {
-      console.error('UDP-block routing sync failed:', error.name || 'Error');
+      console.error('MXH TCP-only routing sync failed:', error.name || 'Error');
     }
   }
   return result;

@@ -171,48 +171,55 @@ async function syncProvision({ xui, config, context, existingProvision = null, e
   return { provision, group, groupClient, inboundIds, client };
 }
 
-function buildGameBlockingConfig(xraySetting, { clientEmails, ruleTag, outboundTag }) {
+function buildMxhTcpOnlyConfig(xraySetting, { clientEmails, udpDenyRuleTag, udpDenyOutboundTag }) {
   const config = xraySetting && typeof xraySetting === 'object' ? structuredClone(xraySetting) : {};
   const outbounds = Array.isArray(config.outbounds) ? config.outbounds : [];
-  const existingOutbound = outbounds.find((item) => item && item.tag === outboundTag);
+  const existingOutbound = outbounds.find((item) => item && item.tag === udpDenyOutboundTag);
   if (existingOutbound && existingOutbound.protocol !== 'blackhole') {
-    throw new XuiError(`Outbound ${outboundTag} đã tồn tại nhưng không phải blackhole.`);
+    throw new XuiError(`Outbound ${udpDenyOutboundTag} đã tồn tại nhưng không phải blackhole.`);
   }
   if (!existingOutbound && clientEmails.length) {
-    outbounds.push({ tag: outboundTag, protocol: 'blackhole', settings: { response: { type: 'none' } } });
+    outbounds.push({ tag: udpDenyOutboundTag, protocol: 'blackhole', settings: { response: { type: 'none' } } });
   }
 
   const routing = config.routing && typeof config.routing === 'object' ? config.routing : {};
   const currentRules = Array.isArray(routing.rules) ? routing.rules : [];
-  const preservedRules = currentRules.filter((rule) => rule?.ruleTag !== ruleTag);
+  const managedRuleTags = new Set([udpDenyRuleTag, 'perralvpn-block-games']);
+  const preservedRules = currentRules.filter((rule) => !managedRuleTags.has(rule?.ruleTag));
   if (clientEmails.length) {
     preservedRules.unshift({
       type: 'field',
       user: clientEmails,
       network: 'udp',
-      outboundTag,
-      ruleTag,
+      outboundTag: udpDenyOutboundTag,
+      ruleTag: udpDenyRuleTag,
     });
   }
+  const referencedOutboundTags = new Set(preservedRules.map((rule) => rule?.outboundTag).filter(Boolean));
+  config.outbounds = outbounds.filter((outbound) => (
+    outbound?.tag !== 'perralvpn-block-games'
+    || outbound?.tag === udpDenyOutboundTag
+    || outbound?.protocol !== 'blackhole'
+    || referencedOutboundTags.has(outbound.tag)
+  ));
   routing.rules = preservedRules;
   config.routing = routing;
-  config.outbounds = outbounds;
   return config;
 }
 
-async function syncGameBlockingRouting({ xui, config, clientEmails = [] }) {
-  if (!config?.gameBlockingEnabled) return { enabled: false, clientCount: 0 };
+async function syncMxhTcpOnly({ xui, config, clientEmails = [] }) {
+  if (!config?.mxhTcpOnlyEnabled) return { enabled: false, clientCount: 0 };
   const uniqueEmails = [...new Set(clientEmails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
   const current = await xui.getXraySetting();
   const currentRules = Array.isArray(current?.routing?.rules) ? current.routing.rules : [];
   const currentOutbounds = Array.isArray(current?.outbounds) ? current.outbounds : [];
-  const hasManagedRule = currentRules.some((rule) => rule?.ruleTag === config.gameBlockingRuleTag);
-  const hasManagedOutbound = currentOutbounds.some((outbound) => outbound?.tag === config.gameBlockingOutboundTag);
+  const hasManagedRule = currentRules.some((rule) => ['perralvpn-mxh-udp-deny', 'perralvpn-block-games'].includes(rule?.ruleTag));
+  const hasManagedOutbound = currentOutbounds.some((outbound) => ['perralvpn-mxh-udp-deny', 'perralvpn-block-games'].includes(outbound?.tag));
   if (!uniqueEmails.length && !hasManagedRule && !hasManagedOutbound) return { enabled: true, clientCount: 0, skipped: true };
-  const next = buildGameBlockingConfig(current, {
+  const next = buildMxhTcpOnlyConfig(current, {
     clientEmails: uniqueEmails,
-    ruleTag: config.gameBlockingRuleTag,
-    outboundTag: config.gameBlockingOutboundTag,
+    udpDenyRuleTag: config.mxhUdpDenyRuleTag,
+    udpDenyOutboundTag: config.mxhUdpDenyOutboundTag,
   });
   await xui.updateXraySetting(next, config.xrayOutboundTestUrl);
   return { enabled: true, clientCount: uniqueEmails.length };
@@ -341,6 +348,6 @@ module.exports = {
   provisionOrder,
   resolveInboundIds,
   syncProvision,
-  buildGameBlockingConfig,
-  syncGameBlockingRouting,
+  buildMxhTcpOnlyConfig,
+  syncMxhTcpOnly,
 };

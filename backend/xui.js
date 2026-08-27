@@ -61,11 +61,11 @@ function createXuiConfig(env = process.env) {
     inboundIdsByPlan: parseJsonEnv(env.XUI_INBOUND_IDS_BY_PLAN, {}),
     defaultInboundIds: String(env.XUI_DEFAULT_INBOUND_IDS || '').trim(),
     deviceLimitAsIpLimit: String(env.XUI_DEVICE_LIMIT_AS_IP_LIMIT || 'false').toLowerCase() === 'true',
-    gameBlockingEnabled: String(env.XUI_GAME_BLOCKING_ENABLED || 'true').toLowerCase() !== 'false',
-    gameBlockedPlanSlugs: String(env.XUI_GAME_BLOCKED_PLAN_SLUGS || 'vina-khong-nen-mxh')
+    mxhTcpOnlyEnabled: String(env.XUI_MXH_TCP_ONLY_ENABLED || 'true').toLowerCase() !== 'false',
+    mxhPlanSlugs: String(env.XUI_MXH_PLAN_SLUGS || 'vina-khong-nen-mxh')
       .split(',').map((slug) => slug.trim().toLowerCase()).filter(Boolean),
-    gameBlockingRuleTag: String(env.XUI_GAME_BLOCKING_RULE_TAG || 'perralvpn-block-games').trim(),
-    gameBlockingOutboundTag: String(env.XUI_GAME_BLOCKING_OUTBOUND_TAG || 'perralvpn-block-games').trim(),
+    mxhUdpDenyRuleTag: String(env.XUI_MXH_UDP_DENY_RULE_TAG || 'perralvpn-mxh-udp-deny').trim(),
+    mxhUdpDenyOutboundTag: String(env.XUI_MXH_UDP_DENY_OUTBOUND_TAG || 'perralvpn-mxh-udp-deny').trim(),
     xrayOutboundTestUrl: String(env.XUI_OUTBOUND_TEST_URL || 'https://www.google.com/generate_204').trim(),
   };
 }

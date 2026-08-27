@@ -472,7 +472,7 @@ function listVpnSubscriptionClients(groupId) {
   return db.prepare('SELECT * FROM vpn_subscription_clients WHERE group_id = ? ORDER BY datetime(created_at) ASC').all(groupId);
 }
 
-function listGameBlockedClientEmails(planSlug = 'vina-khong-nen-mxh') {
+function listMxhClientEmails(planSlug = 'vina-khong-nen-mxh') {
   return db.prepare(`
     SELECT DISTINCT c.xui_email
     FROM vpn_subscription_clients c
@@ -629,7 +629,7 @@ module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderById, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
-  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnClientUuids, listVpnSubscriptionClients, listGameBlockedClientEmails, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnClientUuids, listVpnSubscriptionClients, listMxhClientEmails, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
