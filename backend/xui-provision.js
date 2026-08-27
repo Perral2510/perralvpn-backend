@@ -39,7 +39,7 @@ function resolveInboundIds(config, context) {
   const slug = String(context.plan_slug || '').trim().toLowerCase();
   const directKeys = [context.plan_slug, String(context.plan_id)];
   const logicalKeys = [];
-  if (/^vina-khong-nen(?:-(?:pro|max|vv|mxh))?$/i.test(slug)) logicalKeys.push('vina-khong-nen');
+  if (/^vina-khong-nen(?:-(?:pro|max|vv))?$/i.test(slug)) logicalKeys.push('vina-khong-nen');
   if (/^(?:basic-vpn|pro-vpn|vip-vpn|max-vpn|ultra-vpn)$/i.test(slug)) {
     logicalKeys.push(map.tiktok !== undefined ? 'tiktok' : 'vina-khong-nen');
   }
@@ -171,53 +171,6 @@ async function syncProvision({ xui, config, context, existingProvision = null, e
   return { provision, group, groupClient, inboundIds, client };
 }
 
-function buildGameBlockingConfig(xraySetting, { clientEmails, ruleTag, outboundTag }) {
-  const config = xraySetting && typeof xraySetting === 'object' ? structuredClone(xraySetting) : {};
-  const outbounds = Array.isArray(config.outbounds) ? config.outbounds : [];
-  const existingOutbound = outbounds.find((item) => item && item.tag === outboundTag);
-  if (existingOutbound && existingOutbound.protocol !== 'blackhole') {
-    throw new XuiError(`Outbound ${outboundTag} đã tồn tại nhưng không phải blackhole.`);
-  }
-  if (!existingOutbound && clientEmails.length) {
-    outbounds.push({ tag: outboundTag, protocol: 'blackhole', settings: { response: { type: 'none' } } });
-  }
-
-  const routing = config.routing && typeof config.routing === 'object' ? config.routing : {};
-  const currentRules = Array.isArray(routing.rules) ? routing.rules : [];
-  const preservedRules = currentRules.filter((rule) => rule?.ruleTag !== ruleTag);
-  if (clientEmails.length) {
-    preservedRules.unshift({
-      type: 'field',
-      user: clientEmails,
-      domain: ['geosite:category-games'],
-      outboundTag,
-      ruleTag,
-    });
-  }
-  routing.rules = preservedRules;
-  config.routing = routing;
-  config.outbounds = outbounds;
-  return config;
-}
-
-async function syncGameBlockingRouting({ xui, config, clientEmails = [] }) {
-  if (!config?.gameBlockingEnabled) return { enabled: false, clientCount: 0 };
-  const uniqueEmails = [...new Set(clientEmails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
-  const current = await xui.getXraySetting();
-  const currentRules = Array.isArray(current?.routing?.rules) ? current.routing.rules : [];
-  const currentOutbounds = Array.isArray(current?.outbounds) ? current.outbounds : [];
-  const hasManagedRule = currentRules.some((rule) => rule?.ruleTag === config.gameBlockingRuleTag);
-  const hasManagedOutbound = currentOutbounds.some((outbound) => outbound?.tag === config.gameBlockingOutboundTag);
-  if (!uniqueEmails.length && !hasManagedRule && !hasManagedOutbound) return { enabled: true, clientCount: 0, skipped: true };
-  const next = buildGameBlockingConfig(current, {
-    clientEmails: uniqueEmails,
-    ruleTag: config.gameBlockingRuleTag,
-    outboundTag: config.gameBlockingOutboundTag,
-  });
-  await xui.updateXraySetting(next, config.xrayOutboundTestUrl);
-  return { enabled: true, clientCount: uniqueEmails.length };
-}
-
 function customVlessLinks({ xui, config, provision, clients = [] }) {
   const profiles = typeof xui.getVlessProfiles === 'function'
     ? xui.getVlessProfiles(provision.plan_slug, provision.plan_id)
@@ -341,6 +294,4 @@ module.exports = {
   provisionOrder,
   resolveInboundIds,
   syncProvision,
-  buildGameBlockingConfig,
-  syncGameBlockingRouting,
 };
