@@ -178,7 +178,7 @@ function buildGameBlockingConfig(xraySetting, { clientEmails, ruleTag, outboundT
   if (existingOutbound && existingOutbound.protocol !== 'blackhole') {
     throw new XuiError(`Outbound ${outboundTag} đã tồn tại nhưng không phải blackhole.`);
   }
-  if (!existingOutbound) {
+  if (!existingOutbound && clientEmails.length) {
     outbounds.push({ tag: outboundTag, protocol: 'blackhole', settings: { response: { type: 'none' } } });
   }
 
@@ -203,8 +203,12 @@ function buildGameBlockingConfig(xraySetting, { clientEmails, ruleTag, outboundT
 async function syncGameBlockingRouting({ xui, config, clientEmails = [] }) {
   if (!config?.gameBlockingEnabled) return { enabled: false, clientCount: 0 };
   const uniqueEmails = [...new Set(clientEmails.map((email) => String(email).trim().toLowerCase()).filter(Boolean))];
-  if (!uniqueEmails.length) return { enabled: true, clientCount: 0, skipped: true };
   const current = await xui.getXraySetting();
+  const currentRules = Array.isArray(current?.routing?.rules) ? current.routing.rules : [];
+  const currentOutbounds = Array.isArray(current?.outbounds) ? current.outbounds : [];
+  const hasManagedRule = currentRules.some((rule) => rule?.ruleTag === config.gameBlockingRuleTag);
+  const hasManagedOutbound = currentOutbounds.some((outbound) => outbound?.tag === config.gameBlockingOutboundTag);
+  if (!uniqueEmails.length && !hasManagedRule && !hasManagedOutbound) return { enabled: true, clientCount: 0, skipped: true };
   const next = buildGameBlockingConfig(current, {
     clientEmails: uniqueEmails,
     ruleTag: config.gameBlockingRuleTag,

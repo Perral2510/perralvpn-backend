@@ -164,7 +164,7 @@ async function syncOrderToXui(orderId) {
   if (xuiConfig?.gameBlockingEnabled) {
     try {
       const clientEmails = listGameBlockedClientEmails(xuiConfig.gameBlockedPlanSlugs[0] || 'vina-khong-nen-mxh');
-      if (clientEmails.length) await syncGameBlockingRouting({ xui: xuiClient, config: xuiConfig, clientEmails });
+      await syncGameBlockingRouting({ xui: xuiClient, config: xuiConfig, clientEmails });
     } catch (error) {
       console.error('Game-block routing sync failed:', error.name || 'Error');
     }
