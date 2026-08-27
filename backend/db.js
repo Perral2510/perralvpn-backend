@@ -151,6 +151,7 @@ const PLAN_SEEDS = [
   { id: 8, slug: 'vina-khong-nen-pro', category: 'vn', name: 'VINA KHÔNG NỀN PRO', nameEn: 'VINA KHÔNG NỀN PRO', price: 35000, capacity: '3000GB', speed: '300Mbps', devices: 5, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
   { id: 9, slug: 'vina-khong-nen-max', category: 'vn', name: 'VINA KHÔNG NỀN MAX', nameEn: 'VINA KHÔNG NỀN MAX', price: 65000, capacity: '6000GB', speed: '700Mbps', devices: 8, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
   { id: 10, slug: 'vina-khong-nen-vv', category: 'vn', name: 'VINA KHÔNG NỀN VV', nameEn: 'VINA KHÔNG NỀN VV', price: 79000, capacity: '2000GB', speed: '1Gbps', devices: 2, lifetime: 1, features: ['0 nền', 'Host VNPT', 'Node Việt Nam tốc độ cao', 'Hỗ trợ SIM Vina', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Trọn đời, không gia hạn'] },
+  { id: 21, slug: 'vina-khong-nen-mxh', category: 'vn', name: 'VINA KHÔNG NỀN MXH', nameEn: 'VINA KHÔNG NỀN MXH', price: 15000, capacity: '1000GB', speed: '100Mbps', devices: 2, lifetime: 0, features: ['0 nền', 'Host VNPT', 'Hỗ trợ SIM Vina', 'Hỗ trợ game: Không', 'Node Việt Nam tốc độ cao', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
   { id: 11, slug: 'basic-vpn', category: 'vpn', name: 'Basic VPN', nameEn: 'Basic VPN', price: 20000, capacity: '1000GB', speed: '100Mbps', devices: 1, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
   { id: 12, slug: 'pro-vpn', category: 'vpn', name: 'Pro VPN', nameEn: 'Pro VPN', price: 40000, capacity: '3000GB', speed: '300Mbps', devices: 2, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
   { id: 13, slug: 'vip-vpn', category: 'vpn', name: 'Vip VPN', nameEn: 'Vip VPN', price: 60000, capacity: '6000GB', speed: '700Mbps', devices: 3, lifetime: 0, features: ['TikTok', 'Host TikTok', 'Hỗ trợ mọi loại SIM', 'Hỗ trợ game', 'Hỗ trợ 24/7', 'Có kỳ hạn 1, 3, 6 hoặc 12 tháng'] },
@@ -471,6 +472,21 @@ function listVpnSubscriptionClients(groupId) {
   return db.prepare('SELECT * FROM vpn_subscription_clients WHERE group_id = ? ORDER BY datetime(created_at) ASC').all(groupId);
 }
 
+function listGameBlockedClientEmails(planSlug = 'vina-khong-nen-mxh') {
+  return db.prepare(`
+    SELECT DISTINCT c.xui_email
+    FROM vpn_subscription_clients c
+    JOIN vpn_subscription_groups g ON g.id = c.group_id
+    JOIN subscriptions s ON s.id = g.subscription_id
+    JOIN plans p ON p.id = g.plan_id
+    WHERE p.slug = ?
+      AND g.status = 'active'
+      AND s.status = 'active'
+      AND (s.expires_at IS NULL OR datetime(s.expires_at) > datetime('now'))
+      AND c.xui_email IS NOT NULL AND c.xui_email <> ''
+  `).all(planSlug).map((row) => String(row.xui_email).trim().toLowerCase()).filter(Boolean);
+}
+
 function rotateVpnClientUuids({ groupId, subscriptionId, clients = [], primaryClientUuid = null }) {
   const transaction = db.transaction(() => {
     const updateClient = db.prepare('UPDATE vpn_subscription_clients SET client_uuid = ?, updated_at = datetime(\'now\') WHERE group_id = ? AND xui_email = ?');
@@ -613,7 +629,7 @@ module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderById, getOrderByIdForUser,
   listOrdersForUser, cancelOrderForUser, markOrderPaid, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
-  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnClientUuids, listVpnSubscriptionClients, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
+  getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnClientUuids, listVpnSubscriptionClients, listGameBlockedClientEmails, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
   createPasswordResetCode, getPasswordResetCode, incrementPasswordResetAttempts, consumePasswordResetCode,
