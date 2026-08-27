@@ -175,8 +175,13 @@ function customVlessLinks({ xui, config, provision, clients = [] }) {
     ? xui.getVlessProfiles(provision.plan_slug, provision.plan_id)
     : [xui.getVlessProfile(provision.plan_slug, provision.plan_id)].filter(Boolean);
   if (!profiles.length) throw new XuiError(`Chưa cấu hình VLESS profile cho gói ${provision.plan_slug || provision.plan_id}.`);
-  const remark = `PerralVPN - ${planDisplayName(provision)}`;
-  return clients.flatMap((client) => profiles.map((profile) => xui.buildVlessUrl(client.client_uuid, { ...profile, remark })));
+  const planName = planDisplayName(provision);
+  const hasMultipleProfiles = profiles.length > 1;
+  return clients.flatMap((client) => profiles.map((profile) => {
+    const prefix = hasMultipleProfiles ? String(profile.remarkPrefix || '') : '';
+    const remark = `${prefix}PerralVPN - ${planName}`;
+    return xui.buildVlessUrl(client.client_uuid, { ...profile, remark });
+  }));
 }
 
 async function getSubscriptionPayload({ xui, config, group, provision }) {

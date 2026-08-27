@@ -212,8 +212,8 @@ class XuiClient {
     }
     const zeroProfile = this.getVlessProfile('vina-khong-nen', 7) || this.getVlessProfile(planSlug, planId);
     const tiktokProfile = this.getVlessProfile('tiktok', null) || this.getVlessProfile(planSlug, planId) || zeroProfile;
-    if (isZeroBase && zeroProfile) profiles.push({ ...zeroProfile, address: ZERO_BASE_HOST });
-    if (isTikTok && tiktokProfile) profiles.push({ ...tiktokProfile, address: TIKTOK_HOST });
+    if (isZeroBase && zeroProfile) profiles.push({ ...zeroProfile, address: ZERO_BASE_HOST, remarkPrefix: '(Vina) ' });
+    if (isTikTok && tiktokProfile) profiles.push({ ...tiktokProfile, address: TIKTOK_HOST, remarkPrefix: '(tiktok) ' });
     return profiles;
   }
 
