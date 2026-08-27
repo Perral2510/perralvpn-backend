@@ -282,7 +282,7 @@ function listOrdersForUser(userId) {
 }
 
 function cancelOrderForUser(id, userId) {
-  const result = db.prepare(`UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'`).run(id, userId);
+  const result = db.prepare(`UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending' AND payment_ref IS NULL`).run(id, userId);
   return result.changes > 0;
 }
 
