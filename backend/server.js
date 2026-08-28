@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const {
   db, makeUserCode, publicUser, getUserById, getUserByEmail, listPlans, getPlanById, getPlanBySlug,
-  createOrder, getOrderById, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid,
+  createOrder, getOrderById, getOrderByIdForUser, listOrdersForUser, cancelOrderForUser, markOrderPaid, expirePendingOrders,
   insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getActiveSubscription,
   getActiveVpnProvisionContext, getVpnProvisionContext, getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubId, listVpnSubscriptionClients, listMxhClientEmails,
   updateVpnProvisionStatus,
@@ -328,6 +328,7 @@ app.post('/api/account/orders/checkout', requireAuth, (req, res) => {
 });
 
 app.post('/api/account/orders/:id/checkout', requireAuth, (req, res) => {
+  expirePendingOrders();
   const order = getOrderByIdForUser(req.params.id, req.user.id);
   if (!order) return res.status(404).json({ ok: false, message: 'Không tìm thấy đơn hàng.' });
   if (order.status !== 'pending') return res.status(400).json({ ok: false, message: 'Đơn hàng không còn chờ thanh toán.' });
@@ -375,6 +376,7 @@ app.post('/api/webhooks/sepay/ipn', (req, res) => {
   // Acknowledge it with 200, but never mark an order paid without a complete IPN.
   if (!sepayId) return res.status(200).json({ success: true });
 
+  expirePendingOrders();
   const invoiceNumber = safeText(orderData.order_invoice_number, 100);
   const order = invoiceNumber ? getOrderById(invoiceNumber) : null;
   const orderAmount = Number(orderData.order_amount);
@@ -426,8 +428,10 @@ app.post('/api/webhooks/sepay/ipn', (req, res) => {
 
   const paidOrder = markOrderPaid(order.id, sepayId);
   if (!paidOrder) {
-    updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'error', processingError: 'Could not mark order paid.' });
-    return res.status(500).json({ success: false, message: 'Could not process payment.' });
+    const latestOrder = getOrderById(order.id);
+    const processingStatus = latestOrder?.status === 'paid' ? 'processed' : 'ignored';
+    updateSepayTransaction(sepayId, { orderId: order.id, processingStatus, processingError: processingStatus === 'ignored' ? `Order status is ${latestOrder?.status || 'unavailable'}.` : null });
+    return res.status(200).json({ success: true });
   }
   updateSepayTransaction(sepayId, { orderId: order.id, processingStatus: 'processed' });
 
@@ -440,6 +444,7 @@ app.post('/api/webhooks/sepay/ipn', (req, res) => {
 });
 
 app.post('/api/account/orders/:id/payment-submitted', requireAuth, (req, res) => {
+  expirePendingOrders();
   const order = getOrderByIdForUser(req.params.id, req.user.id);
   if (!order) return res.status(404).json({ ok: false, message: 'Không tìm thấy đơn hàng.' });
   if (order.status !== 'pending') return res.status(400).json({ ok: false, message: 'Đơn hàng không còn chờ thanh toán.' });

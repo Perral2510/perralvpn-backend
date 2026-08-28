@@ -7,6 +7,7 @@ const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'app.sq
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
+const PAYMENT_TIMEOUT_MINUTES = Math.max(1, Number.parseInt(process.env.PAYMENT_TIMEOUT_MINUTES || '10', 10) || 10);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(`
@@ -238,6 +239,18 @@ function publicPlan(row) {
   };
 }
 
+function paymentExpiresAt(createdAt) {
+  if (!createdAt) return null;
+  const created = new Date(String(createdAt).includes('T') ? createdAt : `${String(createdAt).replace(' ', 'T')}Z`);
+  if (Number.isNaN(created.getTime())) return null;
+  return new Date(created.getTime() + PAYMENT_TIMEOUT_MINUTES * 60 * 1000).toISOString();
+}
+
+function expirePendingOrders() {
+  const result = db.prepare(`UPDATE orders SET status = 'expired', updated_at = datetime('now') WHERE status = 'pending' AND datetime(created_at) <= datetime('now', '-${PAYMENT_TIMEOUT_MINUTES} minutes')`).run();
+  return result.changes;
+}
+
 function publicOrder(row) {
   if (!row) return null;
   return {
@@ -254,6 +267,7 @@ function publicOrder(row) {
     status: row.status,
     paymentRef: row.payment_ref || '',
     createdAt: row.created_at,
+    paymentExpiresAt: row.status === 'pending' ? paymentExpiresAt(row.created_at) : null,
     paidAt: row.paid_at || null,
   };
 }
@@ -279,6 +293,7 @@ function listPlans() {
 }
 
 function createOrder({ userId, planId, cycleMonths, subtotal, discount, total, paymentMethod }) {
+  expirePendingOrders();
   const id = makeOrderCode();
   db.prepare(`INSERT INTO orders (id, user_id, plan_id, cycle_months, subtotal_vnd, discount_vnd, total_vnd, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(id, userId, planId, cycleMonths, subtotal, discount, total, paymentMethod);
@@ -286,20 +301,24 @@ function createOrder({ userId, planId, cycleMonths, subtotal, discount, total, p
 }
 
 function getOrderByIdForUser(id, userId) {
+  expirePendingOrders();
   const row = db.prepare(`SELECT o.*, p.name AS plan_name, p.is_lifetime AS is_lifetime FROM orders o JOIN plans p ON p.id = o.plan_id WHERE o.id = ? AND o.user_id = ?`).get(id, userId);
   return publicOrder(row);
 }
 
 function listOrdersForUser(userId) {
+  expirePendingOrders();
   return db.prepare(`SELECT o.*, p.name AS plan_name, p.is_lifetime AS is_lifetime FROM orders o JOIN plans p ON p.id = o.plan_id WHERE o.user_id = ? ORDER BY datetime(o.created_at) DESC`).all(userId).map(publicOrder);
 }
 
 function cancelOrderForUser(id, userId) {
+  expirePendingOrders();
   const result = db.prepare(`UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND user_id = ? AND status = 'pending'`).run(id, userId);
   return result.changes > 0;
 }
 
 function markOrderPaid(orderId, paymentRef = null) {
+  expirePendingOrders();
   const row = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
   if (!row) return null;
   if (row.status === 'paid') return getOrderByIdForUser(orderId, row.user_id);
@@ -628,7 +647,7 @@ function consumePasswordResetCode(id) {
 module.exports = {
   db, PLAN_SEEDS, makeUserCode, makeOrderCode, publicUser, publicPlan, publicOrder,
   getUserById, getUserByEmail, getPlanById, getPlanBySlug, listPlans, createOrder, getOrderById, getOrderByIdForUser,
-  listOrdersForUser, cancelOrderForUser, markOrderPaid, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
+  listOrdersForUser, cancelOrderForUser, markOrderPaid, expirePendingOrders, PAYMENT_TIMEOUT_MINUTES, insertSepayTransaction, updateSepayTransaction, getSepayTransactionById, getVpnProvisionContext, getActiveVpnProvisionContext,
   getVpnProvisionByOrderId, getVpnProvisionByUserId, getVpnProvisionBySubId, getVpnSubscriptionGroupByUserId, getVpnSubscriptionGroupBySubscriptionId, getVpnSubscriptionGroupBySubId, rotateVpnSubscriptionGroupSubId, rotateVpnClientUuids, listVpnSubscriptionClients, listMxhClientEmails, saveVpnSubscriptionGroup, deleteVpnSubscriptionClient, saveVpnSubscriptionClient, saveVpnProvision, updateVpnProvision, updateVpnProvisionStatus,
   getActiveSubscription, createSession,
   getSessionByToken, revokeSession, revokeOtherSessions, revokeAllSessions, hashToken,
