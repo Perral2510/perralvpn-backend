@@ -7,7 +7,7 @@ const dbPath = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'app.sq
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
-const PAYMENT_TIMEOUT_MINUTES = Math.max(1, Number.parseInt(process.env.PAYMENT_TIMEOUT_MINUTES || '10', 10) || 10);
+const PAYMENT_TIMEOUT_MINUTES = Math.max(1, Number.parseInt(process.env.PAYMENT_TIMEOUT_MINUTES || '15', 10) || 15);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.exec(`

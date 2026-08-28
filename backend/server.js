@@ -311,7 +311,7 @@ function buildPendingOrder(req) {
 app.post('/api/account/orders', requireAuth, (req, res) => {
   const result = buildPendingOrder(req);
   if (result.error) return res.status(400).json({ ok: false, message: result.error });
-  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới trang thanh toán.', data: { ...result, payment: paymentInfo(result.order) } });
+  res.status(201).json({ ok: true, message: 'Đã tạo đơn hàng, đang chuyển tới cổng thanh toán SePay.', data: result });
 });
 
 app.post('/api/account/orders/checkout', requireAuth, (req, res) => {
