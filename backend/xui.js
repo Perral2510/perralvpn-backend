@@ -257,8 +257,10 @@ class XuiClient {
       throw new XuiError('VLESS profile thiếu address hoặc port hợp lệ.');
     }
     const params = new URLSearchParams();
-    for (const key of ['path', 'security', 'encryption', 'host', 'fp', 'type', 'sni', 'flow']) {
-      if (profile[key] !== undefined && profile[key] !== null && String(profile[key]) !== '') params.set(key, String(profile[key]));
+    for (const key of ['path', 'security', 'encryption', 'host', 'fp', 'type', 'sni', 'flow', 'mode', 'alpn']) {
+      if (profile[key] === undefined || profile[key] === null) continue;
+      const value = Array.isArray(profile[key]) ? profile[key].join(',') : String(profile[key]);
+      if (value !== '') params.set(key, value);
     }
     const query = params.toString();
     const remark = String(profile.remark || 'PerralVPN').trim();
