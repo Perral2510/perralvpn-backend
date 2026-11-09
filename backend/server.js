@@ -130,6 +130,27 @@ function genericResetResponse(res) {
   return res.json({ ok: true, message: 'Nếu email tồn tại, mã đặt lại mật khẩu đã được gửi.' });
 }
 
+// Every 3x-ui problem surfaces as an XuiError whose message already names the
+// cause (HTTP status, timeout, missing inbound config, ownership guard). Logging
+// only error.name collapsed all of them into "Lỗi server", so a provisioning
+// failure could not be diagnosed from the container logs at all.
+function logXuiFailure(error, label) {
+  const status = error.status ? ` (HTTP ${error.status})` : '';
+  const payload = error.payload ? ` ${JSON.stringify(error.payload).slice(0, 300)}` : '';
+  const detail = `${error.name || 'Error'} ${error.message || ''}${status}${payload}`.trim();
+  console.error(`${label}: ${detail}`);
+  return detail;
+}
+function xuiFailure(error, label) {
+  const detail = logXuiFailure(error, label);
+  // 3x-ui's own `msg` becomes the XuiError message, so cap what leaves the box.
+  return {
+    status: error instanceof XuiError ? 503 : 500,
+    message: error instanceof XuiError ? String(error.message || 'Lỗi server').slice(0, 200) : 'Lỗi server',
+    detail,
+  };
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'perral-api', time: new Date().toISOString() }));
 
 const PAYMENT_METHODS = new Set(['bank']);
@@ -167,7 +188,7 @@ async function syncOrderToXui(orderId) {
         .flatMap((planSlug) => listMxhClientEmails(planSlug));
       await syncMxhTcpOnly({ xui: xuiClient, config: xuiConfig, clientEmails });
     } catch (error) {
-      console.error('MXH TCP-only routing sync failed:', error.name || 'Error');
+      logXuiFailure(error, 'MXH TCP-only routing sync failed');
     }
   }
   return result;
@@ -233,7 +254,7 @@ app.get('/api/account/vpn/sub/:subId', (req, res) => {
     const text = buildCustomSubscriptionText({ xui: xuiClient, config: xuiConfig, group });
     res.set({ 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' }).type('text/plain').send(text);
   } catch (error) {
-    console.error('Custom subscription build failed:', error.name || 'Error');
+    logXuiFailure(error, 'Custom subscription build failed');
     res.status(500).type('text/plain').send('Server error');
   }
 });
@@ -243,8 +264,8 @@ app.get('/api/account/vpn/management', requireAuth, async (req, res) => {
     const data = await publicVpnManagement(req.user.id);
     res.json({ ok: true, data });
   } catch (error) {
-    console.error('VPN management lookup failed:', error.name || 'Error');
-    res.status(503).json({ ok: false, message: 'Lỗi server' });
+    const failure = xuiFailure(error, 'VPN management lookup failed');
+    res.status(failure.status).json({ ok: false, message: failure.message });
   }
 });
 
@@ -256,7 +277,7 @@ app.post('/api/account/vpn/reset-link', requireAuth, async (req, res) => {
     const data = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group: rotated.group });
     res.json({ ok: true, message: 'Đã reset.', data });
   } catch (error) {
-    console.error('VPN subscription reset failed:', error.name || 'Error');
+    logXuiFailure(error, 'VPN subscription reset failed');
     const message = error instanceof XuiError
       ? 'Không thể xác minh hoặc cập nhật VLESS trên máy chủ; URL/QR subscription hiện tại vẫn được giữ nguyên.'
       : 'Không thể reset VLESS lúc này.';
@@ -269,8 +290,8 @@ app.get('/api/account/vpn', requireAuth, async (req, res) => {
     const data = await publicVpnSubscription(req.user.id);
     res.json({ ok: true, data });
   } catch (error) {
-    console.error('VPN subscription read failed:', error.name || 'Error');
-    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Không thể lấy thông tin VPN lúc này.' });
+    const failure = xuiFailure(error, 'VPN subscription read failed');
+    res.status(failure.status).json({ ok: false, message: failure.message });
   }
 });
 
@@ -283,9 +304,9 @@ app.post('/api/account/vpn/sync', requireAuth, async (req, res) => {
     res.json({ ok: true, message: 'Đã đồng bộ gói VPN với máy chủ.', data });
   } catch (error) {
     const existing = getVpnProvisionByOrderId(context.order_id);
-    if (existing) updateVpnProvisionStatus(context.order_id, 'error', '3x-ui synchronization failed');
-    console.error('VPN synchronization failed:', error.name || 'Error');
-    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Lỗi server' });
+    const failure = xuiFailure(error, 'VPN synchronization failed');
+    if (existing) updateVpnProvisionStatus(context.order_id, 'error', failure.detail);
+    res.status(failure.status).json({ ok: false, message: failure.message });
   }
 });
 
@@ -437,8 +458,8 @@ app.post('/api/webhooks/sepay/ipn', (req, res) => {
 
   // Mark the order first, then provision asynchronously so SePay receives a fast 200.
   void syncOrderToXui(order.id).catch((error) => {
-    console.error('SePay-paid order VPN provisioning failed:', error.name || 'Error');
-    updateVpnProvisionStatus(order.id, 'error', 'Provisioning after SePay IPN failed');
+    const detail = logXuiFailure(error, 'SePay-paid order VPN provisioning failed');
+    updateVpnProvisionStatus(order.id, 'error', detail);
   });
   return res.status(200).json({ success: true });
 });
@@ -487,7 +508,7 @@ app.post('/api/admin/grant-plan', async (req, res) => {
     const vpn = await publicVpnSubscription(user.id);
     return res.json({ ok: true, message: 'Đã cấp gói VPN và đồng bộ client 3x-ui.', data: { order: paidOrder, vpn } });
   } catch (error) {
-    console.error('Direct VPN grant failed:', error.name || 'Error');
+    logXuiFailure(error, 'Direct VPN grant failed');
     return res.status(502).json({ ok: false, message: 'Đã tạo subscription nhưng chưa provision được client 3x-ui.', data: { order: paidOrder, vpnSync: 'error' } });
   }
 });
@@ -504,8 +525,8 @@ app.post('/api/admin/vpn-subscriptions/:subId/clients', async (req, res) => {
     const vpn = await getSubscriptionPayload({ xui: xuiClient, config: xuiConfig, group });
     res.status(201).json({ ok: true, message: 'Đã thêm client vào subscription group.', data: { client: added.client, vpn } });
   } catch (error) {
-    console.error('Additional VPN client provisioning failed:', error.name || 'Error');
-    res.status(error instanceof XuiError ? 503 : 500).json({ ok: false, message: 'Lỗi server' });
+    const failure = xuiFailure(error, 'Additional VPN client provisioning failed');
+    res.status(failure.status).json({ ok: false, message: failure.message });
   }
 });
 
@@ -519,7 +540,7 @@ app.post('/api/admin/orders/:id/mark-paid', async (req, res) => {
     await syncOrderToXui(req.params.id);
     res.json({ ok: true, message: 'Đã xác nhận thanh toán, kích hoạt và đồng bộ gói cước.', data: { order, vpnSync: 'active' } });
   } catch (error) {
-    console.error('VPN provisioning after payment failed:', error.name || 'Error');
+    logXuiFailure(error, 'VPN provisioning after payment failed');
     res.status(502).json({ ok: false, message: 'Đã xác nhận thanh toán nhưng chưa đồng bộ được client 3x-ui. Có thể bấm Đồng bộ lại sau khi kiểm tra cấu hình.', data: { order, vpnSync: 'error' } });
   }
 });
